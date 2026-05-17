@@ -310,6 +310,73 @@ composer reuse:check        # SPDX header verification
 composer qa                 # Aggregate of all checks above
 ```
 
+## Rolling deploys with version skew
+
+During a rolling deploy old and new pods serve traffic simultaneously.
+ClusterFileBackend keeps **correctness** in every skew scenario, but two
+cases are worth understanding because they change the **performance**
+profile of the deploy window.
+
+### A) Application code with changed cache layout
+
+If the new image writes a different shape of payload for the same cache
+identifier (extra fields, different serialised classes, changed value
+objects), and you do **not** explicitly invalidate, the following happens:
+
+1. Pod-old writes payload v1 → metadata stores hash_v1.
+2. Pod-new reads, sees hash_v1, has no local blob → blob-miss → TYPO3
+   frontend calls the caller-rebuild → pod-new writes payload v2 →
+   metadata is overwritten with hash_v2.
+3. Pod-old reads, sees hash_v2, has no local blob → blob-miss → rebuilds
+   v1 → metadata back to hash_v1.
+4. **Hash-thrashing** for the duration of the rolling deploy.
+
+The bigger risk is **silent layout drift**: if pod-new is technically able
+to deserialise pod-old's bytes but the resulting object is wrong (missing
+fields, old enum cases, removed class properties), the user sees stale or
+corrupt content. PHP's `unserialize` does **not** verify class shape
+beyond the class name.
+
+**You must invalidate on breaking layout changes.** Pick one:
+
+- **Bump `BackendVersion`** in your deployment (env var or release-pinned
+  constant). The hash diverges by design and old entries are simply not
+  reachable. This is the cleanest option and is enforced by the test
+  suite (`Tests/Unit/EdgeCases/BackendVersionBumpTest.php`).
+- **Run `clusterfilebackend:warmup` with a pre-flush** in your deploy
+  pipeline. Drains stale entries before the new image takes traffic.
+- **Rename the cache identifier** (e.g. `pages` → `pages_v2` in
+  `cacheConfigurations`). Heavy hammer, only for large schema reworks.
+
+If the layout change is **non-breaking** (additive, ignored-by-old-code),
+you can accept the temporary thrashing — correctness is preserved.
+
+### B) PHP major.minor version change
+
+The identity hash includes `PHP_MAJOR.PHP_MINOR`
+(`Classes/Application/Hash/ComputePayloadHash.php`). PHP 8.4 ↔ 8.5 (or
+any other major.minor jump) automatically produces divergent hashes — no
+manual action required. Correctness is guaranteed.
+
+The cost is the same thrashing pattern as in case A) for the duration of
+the rollout. Watch `blob_miss_total` in Prometheus; a sustained spike
+beyond the deploy window indicates the version skew did not converge
+(e.g. one pod stuck in the old image).
+
+PHP **patch** updates (8.5.4 → 8.5.5) do **not** invalidate — only major
+and minor are in the hash.
+
+### Operational recommendation
+
+For a stateless cluster:
+
+- **Patch updates** (igbinary patch, PHP patch, app bug-fix without cache
+  layout change): plain rolling deploy, no extra steps.
+- **Minor / major updates** (PHP minor bump, BackendVersion bump, cache
+  layout change): plain rolling deploy still safe but expect a
+  blob-miss spike. For zero-degradation deploys, run a `Recreate`
+  strategy or pre-flush via the warm-up command.
+
 ## Common pitfalls
 
 - **`localPath` must be writable.** With a read-only `/app` image, mount
@@ -317,6 +384,8 @@ composer qa                 # Aggregate of all checks above
 - **Identical container image across all pods.** Different PHP or igbinary
   versions produce divergent hashes → permanent blob-misses. Major versions
   are enough — patch versions are not in the hash (since v1.0.1).
+- **Bump `BackendVersion` on breaking cache-layout changes.** See the
+  "Rolling deploys with version skew" section above.
 - **`metadataCacheIdentifier`** must be registered before any cache that
   uses `ClusterFileBackend`. TYPO3 loads `cacheConfigurations` in array
   insertion order — define `cluster_meta` first.
