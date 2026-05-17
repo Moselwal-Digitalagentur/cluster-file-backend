@@ -52,13 +52,94 @@ TYPO3 Cache API → ClusterFileBackend
   `KeyValueBackend`) und verweist `ClusterFileBackend` per `metadataCacheIdentifier`
   darauf.
 
+## Setup-Voraussetzungen — was DU machen musst
+
+> Dieses Paket liefert **bewusst keine Auto-Cache-Konfiguration** mit, weil
+> Hostname/Port/TLS/Pfad des Cluster-Stores immer site-spezifisch sind. Du
+> musst die folgenden Schritte manuell einmalig durchführen.
+
+### Pflicht-Schritte
+
+1. **Composer-Abhängigkeit installieren** (siehe „Installation" unten).
+2. **Ein cluster-fähiges Cache-Backend für die Metadaten bereitstellen** —
+   typischerweise ein Redis-/Valkey-Service im Cluster. Wir empfehlen
+   `moselwal/keyvalue-store`, das einen TYPO3-Cache-Backend-Adapter mit TLS/
+   Sentinel-Support liefert. **Was wir liefern**: nichts davon — Du musst den
+   Service deployen und ein TYPO3-Cache-Backend-Paket für ihn installieren.
+3. **Ein TYPO3-Cache-Frontend `cluster_meta` (oder einen Namen deiner Wahl)
+   registrieren** — das ist das zweite Cache-Frontend, das unsere Metadata
+   hält. **Wir liefern**: ein Beispiel-Snippet (siehe unten), KEINE
+   automatische Registrierung.
+4. **Die zu ersetzenden TYPO3-Caches** (`pages`, `pagesection`, `rootline`,
+   `imagesizes`, `assets`, `hash`) **auf `ClusterFileBackend` umkonfigurieren**
+   und auf `cluster_meta` per `metadataCacheIdentifier` verweisen lassen.
+   **Wir liefern**: ebenfalls als Beispiel-Snippet.
+5. **Pod-lokales `emptyDir` mounten** an `/app/var/cache/cluster/` (oder
+   beliebig anderer Pfad, der in `localPath` referenziert wird).
+
+### Was wir mitliefern
+
+| Artefakt | Pfad im Paket | Zweck |
+|---|---|---|
+| **Beispiel-Konfiguration** (vollständig, copy-paste-fertig) | `Configuration/Example/cache-configurations.example.php` | Vollständige Setup für `cluster_meta` + alle Standard-Caches |
+| **JSON-Schema der Options** | `Configuration/Backend/ClusterFileBackend.options.schema.json` | Wird vom Konstruktor validiert; bei Fehlkonfiguration sofortige `InvalidCacheException` mit Pfad zum fehlerhaften Feld |
+| **CLI für GC** | `clusterfilebackend:gc` (via `Configuration/Commands.php`) | Wird automatisch registriert sobald die Extension installiert ist |
+| **DI-Bindings** | `Configuration/Services.yaml` | Auto-Discovery für `MetricsPort`, `ClockPort`, `CompressorPort` |
+
+### Konstruktor-Validierung — was passiert, wenn du etwas vergisst
+
+Der `ClusterFileBackend`-Konstruktor validiert die übergebenen Options via
+JSON-Schema. **Pflichtfelder** (führt sonst zu `InvalidCacheException`):
+
+- `localPath` (string, absoluter Pfad)
+- `metadataCacheIdentifier` (string, Name des `cluster_meta`-Frontends)
+- `namespace.environment` (`prod` | `staging` | `testing` | `development`)
+- `namespace.instance` (string, slug-pattern `[a-z0-9-]{1,64}`)
+
+**Optionale Felder mit Defaults** (siehe `Configuration/Backend/ClusterFileBackend.options.schema.json`):
+
+| Option | Default | Bedeutung |
+|---|---|---|
+| `compression` | `zstd` | `zstd` \| `gzip` \| `none` |
+| `serializer` | `igbinary` | `igbinary` \| `php` |
+| `defaultLifetimeSeconds` | `3600` | TTL falls Caller `null` übergibt |
+| `maxPayloadBytes` | `10485760` (10 MB) | Schreibvorgänge mit größeren Payloads werden mit `InvalidDataException` abgelehnt |
+
+Wenn das `metadataCacheIdentifier`-Cache-Frontend nicht registriert ist,
+schlägt der Konstruktor **sofort** mit einer Meldung fehl, die den
+Konfig-Pfad nennt — kein stilles Failen erst beim ersten `set()`.
+
+---
+
 ## Installation
 
 ```bash
-composer require moselwal/cluster-file-backend:^1.0
+composer require moselwal/cluster-file-backend:^1.0.1
+# Optional, aber empfohlen für Production: Redis/Valkey-Backend mit TLS/Sentinel
+composer require moselwal/keyvalue-store
 ```
 
+Wir liefern **kein Auto-Loader-Snippet** für die Cache-Konfiguration —
+TYPO3 14 kennt keine standardisierte Konvention für „Extension liefert
+Default-Cache-Configs", weil diese inhärent site-spezifisch sind.
+
 ## Konfiguration
+
+### Quick-Start: Beispiel-Snippet übernehmen
+
+Die schnellste Variante: kopiere den Inhalt von
+`vendor/moselwal/cluster-file-backend/Configuration/Example/cache-configurations.example.php`
+in deine `config/system/settings.php` (oder `additional.php`) und passe Hostname,
+Port und ggf. TLS/Sentinel an.
+
+Das Snippet konfiguriert:
+- ein `cluster_meta`-Frontend mit `KeyValueBackend` (Redis/Valkey),
+- alle Standard-File-Caches (`pages`, `pagesection`, `rootline`, `imagesizes`,
+  `assets`, `hash`) auf `ClusterFileBackend`,
+- Pod-lokalen Cache-Pfad `/app/var/cache/cluster/<cacheName>`,
+- `environment`/`instance` aus Env-Variablen `TYPO3_ENV` / `TYPO3_INSTANCE`.
+
+### Schritt für Schritt (wenn du es manuell aufsetzen willst)
 
 **Schritt 1**: Definiere einen TYPO3-Cache, der die Metadaten persistiert. Welches
 Backend du wählst, ist deine Entscheidung — alles, was die TYPO3-Cache-API
