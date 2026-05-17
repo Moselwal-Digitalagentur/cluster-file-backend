@@ -51,6 +51,12 @@
             "minimum": 1024,
             "maximum": 1073741824,
             "default": 10485760
+        },
+        "backendVersionEnvVar": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]{0,63}$",
+            "default": "IMAGE_TAG",
+            "description": "Name of the environment variable that supplies a deploy-scoped identifier (e.g. image tag, commit SHA, release version). The value is folded into the cache-entry hash so that each deploy automatically invalidates previous cache entries. Set to a variable that changes per deploy in your CI/CD (default: IMAGE_TAG)."
         }
     }
 }

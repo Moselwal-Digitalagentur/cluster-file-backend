@@ -60,6 +60,7 @@ $clusterCacheDefaults = [
     // 'serializer'             => 'igbinary', // igbinary | php
     // 'defaultLifetimeSeconds' => 3600,
     // 'maxPayloadBytes'        => 10_485_760, // 10 MB
+    // 'backendVersionEnvVar'   => 'IMAGE_TAG', // see "Rolling deploys" in README
 ];
 
 foreach ([

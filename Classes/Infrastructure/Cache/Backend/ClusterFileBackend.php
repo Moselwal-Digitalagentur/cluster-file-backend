@@ -131,7 +131,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             hasher: new ComputePayloadHash(),
             serializer: $this->serializer,
             compression: $this->compressionName,
-            backendVersion: BackendVersion::current(),
+            backendVersion: BackendVersion::fromEnv((string) $normalized['backendVersionEnvVar']),
         );
         $this->reader = new ReadCacheEntry(
             metadataCache: $this->metadataCache,

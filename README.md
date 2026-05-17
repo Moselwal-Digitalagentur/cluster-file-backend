@@ -337,12 +337,38 @@ fields, old enum cases, removed class properties), the user sees stale or
 corrupt content. PHP's `unserialize` does **not** verify class shape
 beyond the class name.
 
-**You must invalidate on breaking layout changes.** Pick one:
+**Recommended: tie the cache identity to your deploy** so every release
+automatically gets a new BackendVersion and stale entries become
+unreachable. ClusterFileBackend reads an environment variable — by
+default `IMAGE_TAG` — and folds its value into the payload hash via
+crc32. Set this in your deployment manifest:
 
-- **Bump `BackendVersion`** in your deployment (env var or release-pinned
-  constant). The hash diverges by design and old entries are simply not
-  reachable. This is the cleanest option and is enforced by the test
-  suite (`Tests/Unit/EdgeCases/BackendVersionBumpTest.php`).
+```yaml
+# Helm values, Kustomize patch, or plain Pod spec
+env:
+  - name: IMAGE_TAG
+    value: "{{ .Values.image.tag }}"  # or $CI_COMMIT_SHA, release semver, …
+```
+
+Override the variable name per cache if you use a different CI convention:
+
+```php
+'options' => [
+    'localPath'              => '/app/var/cache/cluster/pages',
+    'metadataCacheIdentifier' => 'cluster_meta',
+    'namespace'              => ['environment' => 'prod', 'instance' => 'site'],
+    'backendVersionEnvVar'   => 'CI_COMMIT_SHA',
+],
+```
+
+When the variable is unset or empty, the backend falls back to the
+package-internal `BackendVersion::current()` — safe for local
+development, but **explicitly wire the variable in production** to get
+deploy-scoped invalidation.
+
+**Alternative invalidation strategies** (if `IMAGE_TAG`-based bumping
+doesn't fit your release model):
+
 - **Run `clusterfilebackend:warmup` with a pre-flush** in your deploy
   pipeline. Drains stale entries before the new image takes traffic.
 - **Rename the cache identifier** (e.g. `pages` → `pages_v2` in
@@ -384,8 +410,10 @@ For a stateless cluster:
 - **Identical container image across all pods.** Different PHP or igbinary
   versions produce divergent hashes → permanent blob-misses. Major versions
   are enough — patch versions are not in the hash (since v1.0.1).
-- **Bump `BackendVersion` on breaking cache-layout changes.** See the
-  "Rolling deploys with version skew" section above.
+- **Wire `IMAGE_TAG` (or your equivalent) in production.** Without it the
+  backend uses a package-internal version constant that does NOT change
+  across deploys — breaking cache-layout changes can then silently serve
+  stale or corrupt content. See "Rolling deploys with version skew".
 - **`metadataCacheIdentifier`** must be registered before any cache that
   uses `ClusterFileBackend`. TYPO3 loads `cacheConfigurations` in array
   insertion order — define `cluster_meta` first.

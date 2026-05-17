@@ -4,6 +4,30 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.0] - 2026-05-17
+
+### Added
+
+- **Deploy-scoped BackendVersion**:
+  - `BackendVersion::fromEnv($envVar = 'IMAGE_TAG')` und
+    `BackendVersion::fromString($deployIdentifier)` falten beliebige
+    Deploy-Identifier (Image-Tag, Git-SHA, Release-Semver) via crc32 in
+    eine stabile, cluster-konsistente Versionsnummer.
+  - Neue Backend-Option **`backendVersionEnvVar`** (default: `IMAGE_TAG`)
+    macht den env-Variable-Namen konfigurierbar — z. B. `CI_COMMIT_SHA`
+    oder `RELEASE_VERSION`.
+  - ClusterFileBackend liest die Variable beim Boot; jeder Deploy mit
+    neuem Tag invalidiert automatisch alle Cache-Einträge. Schützt vor
+    "App-Code mit Cache-Layout-Drift während Rolling Deploy".
+- 8 neue Tests für `BackendVersion::fromEnv` / `::fromString`
+  (Determinismus, Divergenz, Fallback, Min-1-Invariant).
+
+### Changed
+
+- **README "Rolling deploys with version skew"** empfiehlt jetzt
+  `IMAGE_TAG`-Bumping als primären Schutz vor Cache-Korruption durch
+  App-Code-Änderungen.
+
 ## [1.1.0] - 2026-05-17
 
 ### Added
@@ -138,5 +162,6 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[1.2.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.1.0...v1.2.0
 [1.1.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.0.1...v1.1.0
 [1.0.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/tags/v1.0.1
