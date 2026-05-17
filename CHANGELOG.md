@@ -4,7 +4,46 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
-## [Unreleased]
+## [1.1.0] - 2026-05-17
+
+### Added
+
+- **Deployment-Time Cache Warm-Up**:
+  - `Application/WarmUp/WarmUpCacheBackend.php` — Service mit
+    Metadata-Health-Check, Local-Store-Path-Probe und optionalem Identifier-
+    Pre-Touch.
+  - `Application/WarmUp/WarmUpReport.php` — strukturiertes Result-Object,
+    JSON-serialisierbar für CI/CD-Automation.
+  - `Infrastructure/WarmUp/BackendWarmUpRunner.php` — orchestriert Warm-Ups
+    über alle konfigurierten ClusterFileBackend-Caches.
+  - `Presentation/Command/WarmUpCommand.php` — `clusterfilebackend:warmup`
+    CLI-Befehl, JSON-Lines-Output, Exit-Code-Differenzierung.
+  - `Presentation/EventListener/CacheWarmupListener.php` — automatische
+    Aktivierung über `\TYPO3\CMS\Core\Cache\Event\CacheWarmupEvent`
+    (Service.yaml `event.listener`-Tag).
+- **Zero-Dependency Default-Konfiguration**:
+  - `Configuration/Example/cache-configurations.example.php` nutzt jetzt
+    `Typo3DatabaseBackend` als Metadata-Cache — funktioniert ohne zusätzliche
+    Composer-Pakete.
+  - `Configuration/Example/cache-configurations-redis.example.php` —
+    optionale Redis/Valkey-Variante via `moselwal/keyvalue-store`.
+
+### Changed
+
+- **Lizenz**: auf **MIT** umgestellt (vorher proprietär). Reuse-Headers,
+  `LICENSE`, `LICENSES/MIT.txt` und `composer.json` konsistent angepasst.
+- **Sprache**: README, Inline-Code-Kommentare, PHPDoc-Blöcke, Test-
+  Beschreibungen, JSON-Schema-Descriptions und Build-Scripts vollständig auf
+  Englisch umgestellt.
+
+### Tests
+
+- 145 Unit-Tests / 263 Assertions / 5 architektonisch übersprungene
+  (vorher 120/223).
+- `Tests/Unit/Application/WarmUp/WarmUpCacheBackendTest.php` — verifiziert
+  Health-Check, Probe-Counting, Report-Struktur.
+
+## [1.0.1] - 2026-05-17
 
 ### Changed (Tech-Stack)
 
@@ -99,4 +138,5 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
-[Unreleased]: https://github.com/moselwal/cluster-file-backend/compare/v0.0.0...HEAD
+[1.1.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.0.1...v1.1.0
+[1.0.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/tags/v1.0.1
