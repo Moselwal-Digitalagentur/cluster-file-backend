@@ -10,7 +10,7 @@ namespace Moselwal\Typo3ClusterCache\Domain\Contract;
 interface ClockPort
 {
     /**
-     * Liefert die aktuelle Zeit als Unix-Timestamp (Sekunden seit Epoch).
+     * Returns the current time as a Unix timestamp (seconds since epoch).
      */
     public function now(): int;
 }

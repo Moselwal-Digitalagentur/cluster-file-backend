@@ -29,12 +29,12 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Regression: vor dem Fix wurde Metadata VOR dem lokalen Schreiben committed.
- * Bei einem Disk-Fail (ENOSPC, EACCES) blieb dann inkonsistente Metadata
- * in der Cluster-Wahrheit, alle anderen Pods erlebten endlos Blob-Miss.
+ * Regression: before the fix metadata was committed BEFORE the local write.
+ * On a disk failure (ENOSPC, EACCES) inconsistent metadata then remained in
+ * the cluster truth and all other pods experienced an endless blob miss.
  *
- * Erwartetes Verhalten nach dem Fix: lokal zuerst — wenn das failt, wird
- * KEINE Metadata committed.
+ * Expected behaviour after the fix: local first — if that fails, NO
+ * metadata is committed.
  */
 #[CoversClass(WriteCacheEntry::class)]
 final class WriteOrderTest extends TestCase
@@ -91,8 +91,9 @@ final class WriteOrderTest extends TestCase
             // expected
         }
 
-        // CRITICAL: Metadata darf NICHT geschrieben worden sein.
-        // Sonst sehen alle anderen Pods "valid metadata" und erleben endlos Blob-Miss.
+        // CRITICAL: metadata MUST NOT have been written.
+        // Otherwise all other pods see "valid metadata" and experience an
+        // endless blob miss.
         self::assertNull(
             $metadataCache->get($id),
             'Metadata must not be committed when local write fails',

@@ -34,9 +34,9 @@ final class SerializerNameTest extends TestCase
             self::markTestSkipped('igbinary extension not loaded');
         }
         $name = SerializerName::igbinary();
-        // Regression: vor dem Fix war hier z. B. "igbinary:3.2.16" — jeder
-        // Patch-Bump des Moduls hätte den gesamten Cluster-Cache invalidiert.
-        // Jetzt: "igbinary:3" (nur Major-Version).
+        // Regression: before the fix this was e.g. "igbinary:3.2.16" — every
+        // patch bump of the module would have invalidated the entire cluster
+        // cache. Now: "igbinary:3" (major version only).
         self::assertMatchesRegularExpression(
             '/^igbinary:(\d+|unknown)$/',
             $name->version,

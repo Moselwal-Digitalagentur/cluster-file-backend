@@ -10,10 +10,9 @@ namespace Moselwal\Typo3ClusterCache\Domain\Model;
 use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
 
 /**
- * Logischer Namespace eines Cache-Eintrags. Wird ausschließlich für
- * Observability-Labels (Metric-Tags, Strukturierte-Log-Felder) verwendet —
- * KEINE Persistenz-Key-Erzeugung, da das die Aufgabe des konfigurierten
- * TYPO3-Cache-Backends ist.
+ * Logical namespace of a cache entry. Used exclusively for observability
+ * labels (metric tags, structured log fields) — NOT for persistence-key
+ * generation, since that is the job of the configured TYPO3 cache backend.
  */
 final readonly class CacheNamespace
 {
@@ -34,10 +33,10 @@ final readonly class CacheNamespace
     }
 
     /**
-     * Liefert das logische Namespace-Label `cfb:{env}:{instance}:{cacheName}`
-     * für Observability-Zwecke (Metriken, Logs, CLI-Argument). Dies ist KEIN
-     * Persistenz-Key — die Schlüssel im Metadata-Cache-Backend werden vom
-     * TYPO3-Cache-Frontend selbst gemanagt.
+     * Returns the logical namespace label `cfb:{env}:{instance}:{cacheName}`
+     * for observability purposes (metrics, logs, CLI arguments). This is NOT
+     * a persistence key — the keys in the metadata cache backend are managed
+     * by the TYPO3 cache frontend itself.
      */
     public function toKvKeyPrefix(): string
     {

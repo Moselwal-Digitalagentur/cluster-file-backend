@@ -12,9 +12,9 @@ use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
 
 /**
- * In-Memory-Implementation des MetadataCachePort für Unit-Tests.
- * Hält die Tags pro Identifier vor, damit `flushByTag`/`findIdentifiersByTag`
- * deterministisch arbeiten.
+ * In-memory implementation of MetadataCachePort for unit tests.
+ * Tracks the tags per identifier so that `flushByTag`/`findIdentifiersByTag`
+ * behave deterministically.
  */
 final class FakeMetadataCache implements MetadataCachePort
 {

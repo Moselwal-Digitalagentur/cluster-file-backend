@@ -18,7 +18,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 
 #[AsCommand(
     name: 'clusterfilebackend:gc',
-    description: 'Triggert die Garbage Collection des Metadata-Caches eines ClusterFileBackend-Namespaces.',
+    description: 'Triggers garbage collection of the metadata cache for a ClusterFileBackend namespace.',
 )]
 final class GarbageCollectCommand extends Command
 {
@@ -39,9 +39,9 @@ final class GarbageCollectCommand extends Command
                 'namespace',
                 null,
                 InputOption::VALUE_REQUIRED,
-                'Vollqualifizierter Cache-Namespace: cfb:{env}:{instance}:{cacheName}',
+                'Fully qualified cache namespace: cfb:{env}:{instance}:{cacheName}',
             )
-            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Keine Schreibvorgänge')
+            ->addOption('dry-run', null, InputOption::VALUE_NONE, 'No write operations')
         ;
     }
 

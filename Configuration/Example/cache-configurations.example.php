@@ -6,63 +6,45 @@
 declare(strict_types=1);
 
 /*
- * Beispiel: vollständige TYPO3-14-Cache-Konfiguration für stateless
- * Kubernetes-Pods mit moselwal/cluster-file-backend.
+ * Zero-dependency default: full TYPO3 14 cache configuration for stateless
+ * Kubernetes pods with moselwal/cluster-file-backend.
  *
- * Kopiere diesen Block in deine `config/system/settings.php` und passe
- * `environment`, `instance` sowie die `cluster_meta`-Backend-Optionen an
- * deine Infrastruktur an.
+ * This example uses only TYPO3 core backends. No extra Composer package is
+ * required — the metadata cache lives in the TYPO3 database
+ * (`Typo3DatabaseBackend`). For sub-millisecond metadata latency in
+ * production, switch to the Redis/Valkey variant in
+ * `cache-configurations-redis.example.php` (requires moselwal/keyvalue-store).
  *
- * Hinweis: Die Reihenfolge ist wichtig — `cluster_meta` MUSS vor allen
- * ClusterFileBackend-Caches definiert sein, damit der Konstruktor des
- * ClusterFileBackend das Frontend via `CacheManager::getCache(...)` finden
- * kann. PHP-Arrays bewahren Insertion-Order; diese Datei hält die korrekte
- * Reihenfolge ein.
+ * Copy this block into your `config/system/settings.php` and adjust
+ * `environment`, `instance`, and `localPath` to your infrastructure.
  *
- * Diese Datei wird NICHT automatisch geladen — Konsumenten müssen sie
- * explizit in ihre TYPO3-System-Konfiguration übernehmen, weil
- * Hostnamen, Ports, Pfade und TLS-Zertifikate site-spezifisch sind.
+ * Order matters: `cluster_meta` MUST be defined before any
+ * ClusterFileBackend-backed cache so the backend constructor can resolve
+ * the frontend via `CacheManager::getCache(...)`. PHP arrays preserve
+ * insertion order; this file keeps the correct order.
  */
 
 // ---------------------------------------------------------------------------
-// 1) ZENTRALE METADATA-CACHE: das Cluster-Backend (Redis/Valkey via
-//    moselwal/keyvalue-store). Alternativ Typo3DatabaseBackend, Memcached, ...
+// 1) CENTRAL METADATA CACHE — zero-dependency variant on the TYPO3 database.
+//    Works out of the box in any TYPO3 installation. For higher throughput,
+//    swap this single block for the Redis variant.
 // ---------------------------------------------------------------------------
 
 $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['cluster_meta'] = [
     'frontend' => TYPO3\CMS\Core\Cache\Frontend\VariableFrontend::class,
-    'backend'  => Moselwal\KeyValueStore\Cache\Backend\KeyValueBackend::class,
+    'backend'  => TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend::class,
     'options'  => [
-        // === Verbindung ===
-        'hostname' => getenv('VALKEY_HOST') ?: 'valkey',
-        'port'     => (int) (getenv('VALKEY_PORT') ?: 6379),
-        'database' => 0,
-
-        // === Optionale Sentinel-Konfiguration ===
-        // 'sentinel'         => true,
-        // 'sentinel_host'    => 'redis-sentinel',
-        // 'sentinel_service' => 'cluster-meta-master',
-
-        // === Optionales TLS / mTLS ===
-        // 'tls'              => true,
-        // 'ca_file'          => '/run/tls/ca.crt',
-        // 'cert_file'        => '/run/tls/client.crt',
-        // 'key_file'         => '/run/tls/client.key',
-        // 'verify_peer'      => true,
-
-        // === Namespace-Trennung gegen andere Caches auf demselben Redis ===
-        'keyPrefix'       => 'cfb_meta_',
-        'defaultLifetime' => 0,  // 0 = keine Default-TTL; TTL kommt pro set()
+        // 0 = no default TTL; the per-entry TTL is supplied on each set()
+        'defaultLifetime' => 0,
     ],
-    // Default-Tags, die mit jedem Eintrag mitgeschrieben werden — optional.
-    // 'defaultTags' => [],
+    'groups' => ['system'],
 ];
 
 // ---------------------------------------------------------------------------
-// 2) DIE FILE-CACHES, DIE WIR ERSETZEN
+// 2) THE FILE-BASED CACHES WE REPLACE
 //    pages, pagesection, rootline, imagesizes, assets, hash, runtime …
-//    Welche Caches du auf ClusterFileBackend umstellst, ist eine
-//    Performance-/Footprint-Entscheidung pro Site.
+//    Which caches you switch to ClusterFileBackend is a per-site
+//    performance / footprint decision.
 // ---------------------------------------------------------------------------
 
 $clusterBackend = Moselwal\Typo3ClusterCache\Infrastructure\Cache\Backend\ClusterFileBackend::class;
@@ -73,7 +55,7 @@ $clusterCacheDefaults = [
         'environment' => getenv('TYPO3_ENV') ?: 'prod',
         'instance'    => getenv('TYPO3_INSTANCE') ?: 'website-a',
     ],
-    // Optional (mit Defaults aus dem JSON-Schema):
+    // Optional (defaults from the JSON schema):
     // 'compression'            => 'zstd',     // zstd | gzip | none
     // 'serializer'             => 'igbinary', // igbinary | php
     // 'defaultLifetimeSeconds' => 3600,
@@ -94,5 +76,6 @@ foreach ([
         'options'  => $clusterCacheDefaults + [
             'localPath' => '/app/var/cache/cluster/' . $cacheName,
         ],
+        'groups'   => ['pages'],
     ];
 }

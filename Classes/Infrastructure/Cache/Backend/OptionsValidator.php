@@ -12,8 +12,8 @@ use JsonSchema\Validator;
 use TYPO3\CMS\Core\Cache\Exception\InvalidCacheException;
 
 /**
- * Validiert die `options[]`-Konfiguration eines ClusterFileBackend-Cache-Records
- * gegen das mitgelieferte JSON-Schema.
+ * Validates the `options[]` configuration of a ClusterFileBackend cache
+ * record against the bundled JSON schema.
  */
 final class OptionsValidator
 {
@@ -22,7 +22,7 @@ final class OptionsValidator
     /**
      * @param array<string, mixed> $options
      *
-     * @return array<string, mixed> Normalisierte Optionen mit angewandten Defaults
+     * @return array<string, mixed> Normalised options with defaults applied
      *
      * @throws InvalidCacheException
      */

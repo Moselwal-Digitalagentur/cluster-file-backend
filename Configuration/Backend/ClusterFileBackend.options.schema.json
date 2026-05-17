@@ -9,12 +9,12 @@
         "localPath": {
             "type": "string",
             "pattern": "^/.*",
-            "description": "Absoluter Pfad zum pod-lokalen Payload-Store-Verzeichnis."
+            "description": "Absolute path to the pod-local payload-store directory."
         },
         "metadataCacheIdentifier": {
             "type": "string",
             "pattern": "^[a-zA-Z0-9_]{1,64}$",
-            "description": "TYPO3-Cache-Frontend-Identifier, der die zentralen Metadaten speichert. Der Anwender konfiguriert dieses Frontend selbst und wählt das Backend (z. B. KeyValueBackend, Typo3DatabaseBackend, etc.)."
+            "description": "TYPO3 cache frontend identifier that stores the central metadata. The consumer configures this frontend and picks the backend themselves (e.g. KeyValueBackend, Typo3DatabaseBackend, etc.)."
         },
         "namespace": {
             "type": "object",

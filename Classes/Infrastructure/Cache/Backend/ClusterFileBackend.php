@@ -42,22 +42,21 @@ use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
- * Cluster-fähiges TYPO3-Cache-Backend ohne Shared Filesystem.
+ * Cluster-aware TYPO3 cache backend without a shared filesystem.
  *
- * Drop-in-Ersatz für {@see \TYPO3\CMS\Core\Cache\Backend\FileBackend} und
+ * Drop-in replacement for {@see \TYPO3\CMS\Core\Cache\Backend\FileBackend} and
  * {@see \TYPO3\CMS\Core\Cache\Backend\SimpleFileBackend}.
  *
- * Architektur:
- * - **Wahrheitsquelle**: ein **anderes** TYPO3-Cache-Frontend, das per
- *   `metadataCacheIdentifier` aus den Options referenziert wird. Dessen
- *   Backend kann der Anwender frei wählen — z. B.
- *   {@see \Moselwal\KeyValueStore\Cache\Backend\KeyValueBackend} für
- *   Redis/Valkey, {@see \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend}
- *   für DB-Cluster.
- * - **Payload-Store**: pod-lokal über {@see EmptyDirPayloadStore}.
+ * Architecture:
+ * - **Source of truth**: a separate TYPO3 cache frontend, referenced via the
+ *   `metadataCacheIdentifier` option. The consumer is free to pick the
+ *   backend — e.g. {@see \Moselwal\KeyValueStore\Cache\Backend\KeyValueBackend}
+ *   for Redis/Valkey, {@see \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend}
+ *   for DB clusters.
+ * - **Payload store**: pod-local via {@see EmptyDirPayloadStore}.
  *
- * Dieses Paket kennt **kein** Redis/Valkey direkt — alle Cluster-Semantik
- * läuft über die TYPO3-Cache-API.
+ * This package does NOT know anything about Redis/Valkey directly — all
+ * cluster semantics are routed through the TYPO3 cache API.
  */
 final class ClusterFileBackend extends AbstractBackend implements TaggableBackendInterface
 {
@@ -88,12 +87,12 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
      */
     public function __construct(array $options = [])
     {
-        // Bewusst leeres parent-Options-Array: AbstractBackend::__construct
-        // mapt jeden Options-Key auf `set<UcfirstKey>(...)` und wirft sonst
-        // \InvalidArgumentException. Unsere Options sind nested (`namespace`
-        // ist ein Array) und passen nicht zum TYPO3-Setter-Pattern. Wir
-        // validieren stattdessen selbst per JSON-Schema, behalten aber den
-        // TYPO3-Logger-Init und alle anderen Parent-Initialisierungen.
+        // Intentionally empty parent options array: AbstractBackend::__construct
+        // maps every option key to `set<UcfirstKey>(...)` and otherwise throws
+        // \InvalidArgumentException. Our options are nested (`namespace` is an
+        // array) and do not fit the TYPO3 setter pattern. We validate ourselves
+        // via JSON schema instead but keep the TYPO3 logger init and all other
+        // parent initialisations.
         parent::__construct([]);
 
         $validator = new OptionsValidator();

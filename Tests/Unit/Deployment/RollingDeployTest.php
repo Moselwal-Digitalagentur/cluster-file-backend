@@ -25,12 +25,11 @@ use Moselwal\Typo3ClusterCache\Tests\Support\InMemoryLocalPayloadStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Spec SC-005 / T162: Während eines Rolling Deploys treten KEINE Cache-
- * Inkonsistenzen zwischen alten und neuen Pods auf. Simuliert über zwei
- * Backend-Instanzen mit identischer Konfiguration (gleiche BackendVersion,
- * gleicher Serializer, gleiche Compression), die sich denselben Metadata-
- * Cache teilen — Stand-in für „Pod A (alt) + Pod B (neu) mit identischem
- * Image".
+ * Spec SC-005 / T162: during a rolling deploy NO cache inconsistencies
+ * appear between old and new pods. Simulated by two backend instances with
+ * identical configuration (same BackendVersion, same serializer, same
+ * compression) sharing the same metadata cache — stand-in for "Pod A (old)
+ * + Pod B (new) with an identical image".
  */
 final class RollingDeployTest extends TestCase
 {
@@ -74,9 +73,9 @@ final class RollingDeployTest extends TestCase
         $id = new CacheIdentifier('rolling_page');
         $writerA->execute($namespace, $id, 'shared_payload', new TagSet(), 3600);
 
-        // Pod A liefert aus lokalem Store
+        // Pod A serves from its local store
         self::assertSame('shared_payload', $readerA->execute($namespace, $id));
-        // Pod B (frisch deployed, leerer Local-Store) erlebt Blob-Miss
+        // Pod B (freshly deployed, empty local store) sees a blob miss
         self::assertNull($readerB->execute($namespace, $id));
         self::assertSame(1, $metrics->counterTotal('blob_miss_total'));
     }
@@ -118,12 +117,12 @@ final class RollingDeployTest extends TestCase
         $writerA->execute($namespace, $id, 'payload', new TagSet(), 3600);
         $metaA = $sharedCache->get($id);
 
-        // Pod B sieht Blob-Miss, Caller schreibt mit identischem Payload neu
+        // Pod B sees a blob miss, the caller re-writes the identical payload
         self::assertNull($readerB->execute($namespace, $id));
         $writerB->execute($namespace, $id, 'payload', new TagSet(), 3600);
         $metaB = $sharedCache->get($id);
 
-        // Hash bleibt identisch — Pod B repariert ohne Identitätswechsel
+        // Hash stays identical — Pod B repairs without changing identity
         self::assertNotNull($metaA);
         self::assertNotNull($metaB);
         self::assertTrue($metaA->hash->equals($metaB->hash));

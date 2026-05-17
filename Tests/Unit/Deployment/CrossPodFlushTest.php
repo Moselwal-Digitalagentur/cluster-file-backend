@@ -27,26 +27,25 @@ use Moselwal\Typo3ClusterCache\Tests\Support\InMemoryLocalPayloadStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Cluster-Konsistenz-Tests: verifiziert, dass Invalidierungen (flush /
- * flushByTag), die auf einem Pod ausgelöst werden, von einem anderen Pod
- * SOFORT beim nächsten Read gesehen werden — ohne irgendeine Synchronisation
- * zwischen den Pods.
+ * Cluster consistency tests: verifies that invalidations (flush /
+ * flushByTag) triggered on one pod are seen IMMEDIATELY by another pod on
+ * the next read — without any pod-to-pod synchronisation.
  *
- * Die Pods werden hier durch zwei `ClusterFileBackend`-Instanzen-Stellvertreter
- * simuliert, die sich denselben `FakeMetadataCache` teilen (= zentrale
- * Wahrheitsquelle), aber JEDER seine EIGENE pod-lokale Datei-Sicht hat. Genau
- * dieses Setup spiegelt die Produktions-Topologie: gemeinsamer Metadata-
- * Cache-Frontend (Redis/DB/Memcached), getrennte `emptyDir`-Volumes.
+ * The pods are simulated here by two `ClusterFileBackend` stand-ins that
+ * share the same `FakeMetadataCache` (= central source of truth) but EACH
+ * has its OWN pod-local file view. This setup mirrors the production
+ * topology exactly: shared metadata-cache frontend (Redis/DB/Memcached),
+ * separate `emptyDir` volumes.
  *
- * Wenn diese Tests jemals fehlschlagen, ist das Cluster-Versprechen
- * (zentrale Cache-Gültigkeit) gebrochen.
+ * If these tests ever fail, the cluster promise (central cache validity)
+ * is broken.
  */
 final class CrossPodFlushTest extends TestCase
 {
     private CacheNamespace $namespace;
-    private FakeMetadataCache $sharedMetadata;   // ← zentrale Wahrheit (geteilt)
-    private InMemoryLocalPayloadStore $podALocal; // ← Pod A: eigene Datei-Sicht
-    private InMemoryLocalPayloadStore $podBLocal; // ← Pod B: eigene Datei-Sicht
+    private FakeMetadataCache $sharedMetadata;   // central source of truth (shared)
+    private InMemoryLocalPayloadStore $podALocal; // Pod A: own file view
+    private InMemoryLocalPayloadStore $podBLocal; // Pod B: own file view
     private FakeClock $clock;
     private FakeMetrics $metrics;
     private WriteCacheEntry $podAWriter;
@@ -112,27 +111,27 @@ final class CrossPodFlushTest extends TestCase
     }
 
     /**
-     * Szenario: Editor klickt im TYPO3-Backend „Clear all caches" → Pod A
-     * führt `flush()` aus. Pod B (frisches Request) MUSS sofort Cache-Miss
-     * sehen — ohne irgendeinen Sync-Mechanismus zwischen den Pods.
+     * Scenario: editor clicks "Clear all caches" in the TYPO3 backend → Pod A
+     * runs `flush()`. Pod B (fresh request) MUST see a cache miss
+     * immediately — without any pod-to-pod sync mechanism.
      */
     public function testFlushOnPodAIsImmediatelyVisibleOnPodB(): void
     {
         $id = new CacheIdentifier('page_42');
 
-        // Pod A schreibt, danach lesen beide Pods erfolgreich (Pod B repariert
-        // via Caller-Rebuild, wir simulieren das hier durch direkten Write
-        // auf Pod B mit identischem Payload).
+        // Pod A writes, then both pods read successfully (Pod B repairs via
+        // caller rebuild — we simulate this here by writing the same payload
+        // directly on Pod B).
         $this->podAWriter->execute($this->namespace, $id, 'content_v1', new TagSet(), 3600);
         $this->podBWriter->execute($this->namespace, $id, 'content_v1', new TagSet(), 3600);
         self::assertSame('content_v1', $this->podAReader->execute($this->namespace, $id));
         self::assertSame('content_v1', $this->podBReader->execute($this->namespace, $id));
 
-        // Pod A führt clear-cache durch.
+        // Pod A runs clear-cache.
         $this->flusher->execute($this->namespace);
 
-        // Pod B liest sofort danach → MUSS Cache-Miss sehen.
-        // Kein Sync-Schritt zwischen den Pods notwendig.
+        // Pod B reads right after → MUST see a cache miss.
+        // No sync step between the pods required.
         self::assertNull(
             $this->podBReader->execute($this->namespace, $id),
             'Pod B must see the flush from Pod A immediately on next get()',
@@ -144,8 +143,8 @@ final class CrossPodFlushTest extends TestCase
     }
 
     /**
-     * Szenario: Editor speichert Seite 42 → TYPO3 ruft `flushByTag('pageId_42')`
-     * auf Pod A. Andere Tags bleiben gültig. Pod B sieht sofort:
+     * Scenario: editor saves page 42 → TYPO3 calls `flushByTag('pageId_42')`
+     * on Pod A. Other tags stay valid. Pod B immediately sees:
      * page_42 → miss, page_7 → hit.
      */
     public function testFlushByTagOnPodAInvalidatesOnlyMatchingEntriesOnPodB(): void
@@ -153,17 +152,17 @@ final class CrossPodFlushTest extends TestCase
         $page42 = new CacheIdentifier('page_42');
         $page7 = new CacheIdentifier('page_7');
 
-        // Pod A schreibt zwei Einträge mit unterschiedlichen Tags
+        // Pod A writes two entries with different tags
         $this->podAWriter->execute($this->namespace, $page42, 'content_42', new TagSet(['pageId_42']), 3600);
         $this->podAWriter->execute($this->namespace, $page7, 'content_7', new TagSet(['pageId_7']), 3600);
-        // Pod B repariert (deterministisch identische Bytes)
+        // Pod B repairs (deterministic identical bytes)
         $this->podBWriter->execute($this->namespace, $page42, 'content_42', new TagSet(['pageId_42']), 3600);
         $this->podBWriter->execute($this->namespace, $page7, 'content_7', new TagSet(['pageId_7']), 3600);
 
-        // Pod A invalidiert nur den Tag pageId_42
+        // Pod A invalidates only the tag pageId_42
         $this->tagFlusher->execute($this->namespace, 'pageId_42');
 
-        // Pod B sieht: page_42 → miss, page_7 → hit
+        // Pod B sees: page_42 → miss, page_7 → hit
         self::assertNull(
             $this->podBReader->execute($this->namespace, $page42),
             'Pod B must see the tag flush from Pod A',
@@ -176,11 +175,11 @@ final class CrossPodFlushTest extends TestCase
     }
 
     /**
-     * Hard-Invariant-Check: Pod B's lokale Cache-Datei überlebt einen Flush
-     * — wird aber nicht ausgeliefert, weil die Metadata weg ist. Wenn Pod B
-     * danach den gleichen Content neu schreibt, materialisiert er denselben
-     * Filename (Hash-Determinismus) — die alte Datei kann harmlos überschrieben
-     * werden oder bleibt als no-op-Identität.
+     * Hard invariant check: Pod B's local cache file survives a flush — but
+     * it is not served because the metadata is gone. If Pod B then re-writes
+     * the same content, it materialises the same filename (hash determinism)
+     * — the old file can be overwritten harmlessly or stays as a no-op
+     * identity.
      */
     public function testLocalFileSurvivesFlushButIsUnreachableWithoutMetadata(): void
     {
@@ -188,17 +187,17 @@ final class CrossPodFlushTest extends TestCase
         $this->podAWriter->execute($this->namespace, $id, 'content', new TagSet(), 3600);
         $this->podBWriter->execute($this->namespace, $id, 'content', new TagSet(), 3600);
 
-        // Pod B's lokale Datei existiert nach dem Write
+        // Pod B's local file exists after the write
         $hashesBefore = [];
         foreach ($this->podBLocal->iterateAll() as $payloadHash) {
             $hashesBefore[] = $payloadHash->digest;
         }
         self::assertCount(1, $hashesBefore, 'Pod B materialized exactly one file');
 
-        // Pod A flushed
+        // Pod A flushes
         $this->flusher->execute($this->namespace);
 
-        // Pod B's Datei ist NOCH DA — wird aber nicht ausgeliefert
+        // Pod B's file is STILL there — but is not served
         $hashesAfter = [];
         foreach ($this->podBLocal->iterateAll() as $hashAfter) {
             $hashesAfter[] = $hashAfter->digest;
@@ -206,14 +205,14 @@ final class CrossPodFlushTest extends TestCase
         self::assertSame($hashesBefore, $hashesAfter, 'Local file survives flush (orphan)');
         self::assertNull(
             $this->podBReader->execute($this->namespace, $id),
-            'But it is unreachable: Metadata is gone, so the file is not auslieferbar',
+            'But it is unreachable: metadata is gone, so the file cannot be served',
         );
     }
 
     /**
-     * Stellt sicher, dass nach einem Flush ein **neuer** Write auf Pod B
-     * funktioniert (identischer Content → identischer Hash → idempotente
-     * Materialisierung; oder neuer Content → neuer Hash → neue Datei).
+     * Ensures that after a flush a **new** write on Pod B works (identical
+     * content → identical hash → idempotent materialisation; or new content
+     * → new hash → new file).
      */
     public function testWriteAfterFlushReestablishesConsistency(): void
     {
@@ -222,33 +221,33 @@ final class CrossPodFlushTest extends TestCase
         $this->podAWriter->execute($this->namespace, $id, 'v1', new TagSet(), 3600);
         $this->flusher->execute($this->namespace);
 
-        // Nach dem Flush: Pod B schreibt v2 (Content geändert) — Hash anders.
+        // After the flush: Pod B writes v2 (content changed) — hash differs.
         $this->podBWriter->execute($this->namespace, $id, 'v2', new TagSet(), 3600);
 
-        // Pod A sieht beim nächsten Read → Metadata aus dem Cache (von Pod B),
-        // aber lokale Datei mit dem neuen Hash fehlt auf Pod A → Blob-Miss.
+        // Pod A on the next read → metadata from the cache (written by Pod B),
+        // but a local file with the new hash is missing on Pod A → blob miss.
         self::assertNull(
             $this->podAReader->execute($this->namespace, $id),
             'Pod A blob-misses because Pod B wrote a different content (different hash)',
         );
         self::assertSame(1, $this->metrics->counterTotal('blob_miss_total'));
 
-        // Pod A repariert via Caller-Rebuild (= eigener Write desselben v2)
+        // Pod A repairs via caller rebuild (= own write of the same v2)
         $this->podAWriter->execute($this->namespace, $id, 'v2', new TagSet(), 3600);
         self::assertSame('v2', $this->podAReader->execute($this->namespace, $id));
     }
 
     /**
-     * Globale `flush()`-Operation: Pod A räumt zentralen Cache → Pod B,
-     * Pod C, Pod N sehen alle Cache-Miss, unabhängig wie viele Pods im
-     * Cluster sind. Wir simulieren das mit 5 unabhängigen lokalen Stores
-     * gegen einen geteilten Metadata-Cache.
+     * Global `flush()` operation: Pod A clears the central cache → Pod B,
+     * Pod C, …, Pod N all see cache misses, regardless of how many pods are
+     * in the cluster. We simulate this with 5 independent local stores
+     * against one shared metadata cache.
      */
     public function testFlushPropagatesToArbitraryNumberOfPods(): void
     {
         $id = new CacheIdentifier('page_42');
 
-        // 5 Pods schreiben unabhängig denselben deterministischen Inhalt
+        // 5 pods independently write the same deterministic content
         $localStores = [
             $this->podALocal,
             $this->podBLocal,
@@ -288,10 +287,10 @@ final class CrossPodFlushTest extends TestCase
             self::assertSame('shared', $reader->execute($this->namespace, $id), "Pod {$i} initial hit");
         }
 
-        // Ein beliebiger Pod (hier: Pod 0) flushed
+        // An arbitrary pod (here: Pod 0) flushes
         $this->flusher->execute($this->namespace);
 
-        // Alle 5 Pods sehen sofort Miss
+        // All 5 pods immediately see a miss
         foreach ($readers as $i => $reader) {
             self::assertNull(
                 $reader->execute($this->namespace, $id),

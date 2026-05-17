@@ -25,15 +25,15 @@ use Moselwal\Typo3ClusterCache\Tests\Support\InMemoryLocalPayloadStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Verifiziert die 10 „Hard Invariants" aus spec.md gegen das tatsächliche
- * Verhalten der Application-Services. Jede Invariante hat einen eigenen Test;
- * die Identifier (`I1` … `I10`) entsprechen der Nummerierung in der Spec.
+ * Verifies the 10 "hard invariants" from spec.md against the actual
+ * behaviour of the application services. Every invariant has its own test;
+ * the identifiers (`I1` … `I10`) match the numbering in the spec.
  *
- * Nicht jede Invariante ist sinnvoll im Paket testbar — I6 (keine shared
- * cache volumes), I7 (keine RWX-Filesystems), I8 (Core Cache deployed) und
- * I9 (FAL außerhalb) sind Architektur-/Konfigurations-Aussagen, deren
- * Einhaltung außerhalb dieses Pakets erzwungen wird. Diese werden hier mit
- * `markTestSkipped()` und einer dokumentierenden Begründung übergangen.
+ * Not every invariant is meaningfully testable inside the package — I6 (no
+ * shared cache volumes), I7 (no RWX filesystems), I8 (core cache deployed)
+ * and I9 (FAL outside) are architecture/configuration statements enforced
+ * outside this package. They are bypassed here with `markTestSkipped()`
+ * and a documenting justification.
  */
 final class HardInvariantsTest extends TestCase
 {
@@ -73,35 +73,35 @@ final class HardInvariantsTest extends TestCase
         );
     }
 
-    /** I1: Metadata ist Source of Truth. */
+    /** I1: metadata is the source of truth. */
     public function testI1MetadataIsSourceOfTruth(): void
     {
         $id = new CacheIdentifier('i1');
         $this->writer->execute($this->namespace, $id, 'bytes', new TagSet(), 3600);
 
-        // Lokale Datei manuell löschen — Metadata bleibt unverändert
+        // Delete the local file manually — metadata stays unchanged
         foreach ($this->local->iterateAll() as $hash) {
             $this->local->delete($hash);
         }
-        // Trotzdem ist die Metadata gültig (Source of Truth)
+        // Metadata is still valid (source of truth)
         self::assertNotNull($this->metadataCache->get($id));
     }
 
-    /** I2: Lokale Dateien sind nur Materialisierung. */
+    /** I2: local files are merely materialisation. */
     public function testI2LocalFilesAreMerelyMaterialization(): void
     {
         $id = new CacheIdentifier('i2');
-        // Datei "von Hand" anlegen — ohne Metadata
+        // Create file "by hand" — without metadata
         $hash = new \Moselwal\Typo3ClusterCache\Domain\Model\PayloadHash(
             hash('sha256', 'rogue'),
         );
         $this->local->write($hash, 'rogue');
 
-        // Read MUSS Cache-Miss liefern — Metadata fehlt
+        // Read MUST yield a cache miss — metadata is missing
         self::assertNull($this->reader->execute($this->namespace, $id));
     }
 
-    /** I3: Fehlende Datei ist KEIN Cache-Miss, sondern ein Blob-Miss. */
+    /** I3: a missing file is NOT a cache miss but a blob miss. */
     public function testI3MissingFileIsBlobMissNotCacheMiss(): void
     {
         $id = new CacheIdentifier('i3');
@@ -114,16 +114,16 @@ final class HardInvariantsTest extends TestCase
         self::assertSame(
             1,
             $this->metrics->counterTotal('blob_miss_total'),
-            'Blob-Miss-Metrik muss greifen, NICHT Cache-Miss'
+            'Blob-miss metric must increment, NOT cache-miss'
         );
         self::assertSame(
             0,
             $this->metrics->counterTotal('cache_miss_total'),
-            'Cache-Miss-Metrik darf bei fehlender Datei NICHT greifen'
+            'Cache-miss metric must NOT increment for a missing file'
         );
     }
 
-    /** I4: Repair darf keine neue Identität erzeugen. */
+    /** I4: repair must not produce a new identity. */
     public function testI4RepairKeepsIdentity(): void
     {
         $id = new CacheIdentifier('i4');
@@ -131,84 +131,84 @@ final class HardInvariantsTest extends TestCase
         $originalHash = $this->metadataCache->get($id)?->hash->digest;
         self::assertNotNull($originalHash);
 
-        // Datei löschen, Caller schreibt dieselben Bytes erneut → Repair-Pfad
+        // Delete file, caller writes the same bytes again → repair path
         foreach ($this->local->iterateAll() as $hash) {
             $this->local->delete($hash);
         }
         $this->writer->execute($this->namespace, $id, 'bytes', new TagSet(), 3600);
 
         $newHash = $this->metadataCache->get($id)?->hash->digest;
-        self::assertSame($originalHash, $newHash, 'Repair muss identischen Hash beibehalten');
+        self::assertSame($originalHash, $newHash, 'Repair must preserve the identical hash');
         self::assertSame(1, $this->metrics->counterTotal('repair_success_total'));
     }
 
-    /** I5: Rebuild (TYPO3-Sinn) nur bei echtem Cache-Miss — getestet implizit über I3. */
+    /** I5: rebuild (in the TYPO3 sense) only on a real cache miss — tested implicitly via I3. */
     public function testI5RebuildOnlyOnRealCacheMiss(): void
     {
         $id = new CacheIdentifier('i5');
         $this->writer->execute($this->namespace, $id, 'bytes', new TagSet(), 3600);
 
-        // Erster Read → Hit, kein Rebuild
+        // First read → hit, no rebuild
         self::assertSame('bytes', $this->reader->execute($this->namespace, $id));
         self::assertSame(
             0,
             $this->metrics->counterTotal('payload_rebuild_total'),
-            'Bei Cache-Hit darf kein Rebuild stattfinden'
+            'On a cache hit no rebuild must occur'
         );
     }
 
-    /** I6: Keine shared cache volumes. */
+    /** I6: no shared cache volumes. */
     public function testI6NoSharedCacheVolumes(): void
     {
         self::markTestSkipped(
-            'I6 ist eine Architekturvorschrift (Kubernetes-Deployment-Topologie); '
-            . 'nicht im Paket testbar. Wird durch das Fehlen jeglicher RWX-/'
-            . 'Shared-FS-Operationen im Code-Pfad enforced.',
+            'I6 is an architecture rule (Kubernetes deployment topology); '
+            . 'not testable inside the package. Enforced by the absence of '
+            . 'any RWX / shared-FS operations in the code path.',
         );
     }
 
-    /** I7: Keine RWX Filesystems. */
+    /** I7: no RWX filesystems. */
     public function testI7NoRwxFilesystems(): void
     {
         self::markTestSkipped(
-            'I7 ist eine Deployment-Vorschrift; nicht im Paket testbar.',
+            'I7 is a deployment rule; not testable inside the package.',
         );
     }
 
-    /** I8: Core Cache bleibt deployed. */
+    /** I8: core cache remains deployed. */
     public function testI8CoreCacheRemainsDeployed(): void
     {
         self::markTestSkipped(
-            'I8 ist eine Container-Image-Build-Aussage; nicht im Paket testbar.',
+            'I8 is a container image build statement; not testable inside the package.',
         );
     }
 
-    /** I9: FAL bleibt außerhalb des Cache-Systems. */
+    /** I9: FAL stays outside the cache system. */
     public function testI9FalRemainsOutside(): void
     {
         self::markTestSkipped(
-            'I9 ist eine Architektur-Abgrenzung; nicht im Paket testbar.',
+            'I9 is an architectural boundary; not testable inside the package.',
         );
     }
 
-    /** I10: Payload-Dateien dürfen jederzeit lokal verloren gehen. */
+    /** I10: payload files may be lost locally at any time. */
     public function testI10PayloadFilesMayBeLostAnytime(): void
     {
         $id = new CacheIdentifier('i10');
         $this->writer->execute($this->namespace, $id, 'bytes', new TagSet(), 3600);
 
-        // Wiederholtes "Datei verschwunden" + erneute Caller-Berechnung
+        // Repeated "file vanished" + re-computation by caller
         for ($i = 0; $i < 5; ++$i) {
             foreach ($this->local->iterateAll() as $hash) {
                 $this->local->delete($hash);
             }
-            // Caller bemerkt Blob-Miss (false) und schreibt erneut
+            // Caller observes blob miss (false) and re-writes
             self::assertNull($this->reader->execute($this->namespace, $id));
             $this->writer->execute($this->namespace, $id, 'bytes', new TagSet(), 3600);
-            // Anschließender Read → Hit
+            // Subsequent read → hit
             self::assertSame('bytes', $this->reader->execute($this->namespace, $id));
         }
-        // Identifier ist nach 5 Verlust-Zyklen immer noch konsistent
+        // Identifier is still consistent after 5 loss cycles
         $finalMeta = $this->metadataCache->get($id);
         self::assertNotNull($finalMeta);
         self::assertSame('valid', $finalMeta->state->value);

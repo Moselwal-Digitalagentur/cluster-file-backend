@@ -14,15 +14,15 @@ use TYPO3\CMS\Core\Cache\Backend\TaggableBackendInterface;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
 
 /**
- * Adapter, der die {@see MetadataCachePort}-Schnittstelle auf ein beliebiges
- * TYPO3-Cache-Frontend abbildet. Damit ist die Wahl des persistenten
- * Backends (Redis via {@see \Moselwal\KeyValueStore\Cache\Backend\KeyValueBackend},
- * {@see \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend}, etc.) reine
- * Konfigurationssache des TYPO3-Konsumenten.
+ * Adapter that maps the {@see MetadataCachePort} interface onto an arbitrary
+ * TYPO3 cache frontend. The choice of the persistent backend (Redis via
+ * {@see \Moselwal\KeyValueStore\Cache\Backend\KeyValueBackend},
+ * {@see \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend}, etc.) is therefore
+ * purely a configuration concern for the TYPO3 consumer.
  *
- * Werte werden als Array (`CacheMetadata::toKvPayload()` / `::fromKvPayload()`)
- * über das Frontend gespeichert; ein {@see \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend}
- * ist die natürliche Wahl.
+ * Values are stored as arrays (`CacheMetadata::toKvPayload()` /
+ * `::fromKvPayload()`) through the frontend; a
+ * {@see \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend} is the natural choice.
  */
 final readonly class Typo3MetadataCache implements MetadataCachePort
 {

@@ -17,7 +17,7 @@ interface LocalPayloadStorePort
     public function exists(PayloadHash $hash): bool;
 
     /**
-     * Liest die Bytes und validiert sie gegen die Checksum.
+     * Reads the bytes and validates them against the checksum.
      *
      * @throws \Moselwal\Typo3ClusterCache\Domain\Exception\PayloadIntegrityException
      * @throws \Moselwal\Typo3ClusterCache\Domain\Exception\PayloadNotFoundException
@@ -25,7 +25,7 @@ interface LocalPayloadStorePort
     public function readVerified(PayloadHash $hash, PayloadChecksum $checksum): string;
 
     /**
-     * Atomar schreiben.
+     * Atomic write.
      *
      * @throws \Moselwal\Typo3ClusterCache\Domain\Exception\LocalStoreWriteException
      */

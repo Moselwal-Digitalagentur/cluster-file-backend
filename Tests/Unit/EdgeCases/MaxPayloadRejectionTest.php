@@ -12,10 +12,10 @@ use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Cache\Exception\InvalidCacheException;
 
 /**
- * Spec Edge Case T165: Sehr große Payloads — das Schema-validierte
- * `maxPayloadBytes` setzt die obere Grenze. Hier auf der Konfig-Ebene
- * geprüft; die `set()`-Pfad-Prüfung selbst lebt im ClusterFileBackend
- * und ist nur mit TYPO3-Bootstrap testbar (Functional-Test).
+ * Spec edge case T165: very large payloads — the schema-validated
+ * `maxPayloadBytes` defines the upper bound. Verified here at the config
+ * level; the actual `set()` path check lives inside ClusterFileBackend and
+ * is only testable with a TYPO3 bootstrap (functional test).
  */
 final class MaxPayloadRejectionTest extends TestCase
 {

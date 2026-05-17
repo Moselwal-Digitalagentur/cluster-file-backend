@@ -13,24 +13,23 @@ use PHPUnit\Framework\TestCase;
 use TYPO3\CMS\Core\Cache\Exception\InvalidCacheException;
 
 /**
- * Regression: das vorherige `parent::__construct($options)` warf bei jeder
- * TYPO3-Cache-Konfiguration sofort `\InvalidArgumentException`, weil
- * AbstractBackend für jeden Options-Key einen Setter erwartet — und
- * ClusterFileBackend hat keine.
+ * Regression: the previous `parent::__construct($options)` threw
+ * `\InvalidArgumentException` for every TYPO3 cache configuration because
+ * AbstractBackend expects a setter for each option key — and
+ * ClusterFileBackend has none.
  *
- * Dieser Test instantiiert das Backend mit dem typischen Options-Layout aus
+ * This test instantiates the backend with the typical options layout from
  * `$GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']`.
- * Wenn er fehlschlägt, würde TYPO3 das Backend in Production sofort
- * zerlegen — selbst bevor der erste `set()` läuft.
+ * If it fails, TYPO3 would tear the backend apart in production — even
+ * before the first `set()` runs.
  *
- * Hinweis: Der Konstruktor instanziiert per `GeneralUtility::makeInstance`
- * Default-Services für `ClockPort` und `MetricsPort` sowie holt ein
- * TYPO3-Cache-Frontend via `CacheManager::getCache(...)`. In dieser
- * Unit-Test-Umgebung ohne TYPO3-Bootstrap schlägt das beim ersten
- * Service-Lookup mit einer ungeladenen Klasse fehl — daher fangen wir
- * \Throwable und verifizieren nur den Vor-Throw-Punkt:
- * `OptionsValidator` MUSS die Schema-Verstöße werfen, bevor irgendetwas
- * anderes versucht wird.
+ * Note: the constructor instantiates default services for `ClockPort` and
+ * `MetricsPort` via `GeneralUtility::makeInstance` and fetches a TYPO3
+ * cache frontend via `CacheManager::getCache(...)`. In this unit-test
+ * environment without a TYPO3 bootstrap that first service lookup would
+ * fail on an unloaded class — so we catch \Throwable and verify only the
+ * pre-throw point: the `OptionsValidator` MUST raise schema violations
+ * before anything else is attempted.
  */
 #[CoversClass(ClusterFileBackend::class)]
 final class ClusterFileBackendConstructorTest extends TestCase
@@ -39,7 +38,7 @@ final class ClusterFileBackendConstructorTest extends TestCase
     {
         $this->expectException(InvalidCacheException::class);
         new ClusterFileBackend([
-            // 'localPath' fehlt
+            // 'localPath' is missing
             'metadataCacheIdentifier' => 'cluster_meta',
             'namespace' => ['environment' => 'prod', 'instance' => 'site'],
         ]);
@@ -56,9 +55,9 @@ final class ClusterFileBackendConstructorTest extends TestCase
 
     public function testUnknownOptionKeyRejected(): void
     {
-        // Spezifischer Regression-Test: TYPO3-AbstractBackend würde hier
-        // Setter aufrufen wollen, die nicht existieren. Unser eigener
-        // Validator MUSS das vorher fangen.
+        // Specific regression test: TYPO3 AbstractBackend would try to call
+        // setters here that do not exist. Our own validator MUST catch this
+        // up-front.
         $this->expectException(InvalidCacheException::class);
         new ClusterFileBackend([
             'localPath' => '/tmp/cfb-test',

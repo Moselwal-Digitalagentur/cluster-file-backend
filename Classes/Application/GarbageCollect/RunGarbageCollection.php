@@ -12,11 +12,11 @@ use Moselwal\Typo3ClusterCache\Domain\Contract\MetadataCachePort;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
 
 /**
- * Orchestriert die Garbage Collection des Metadata-Caches. Die eigentliche
- * Räumlogik delegiert an das konfigurierte TYPO3-Cache-Backend
- * (z. B. {@see \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend::collectGarbage()},
- * Redis/Valkey expiration, etc.). Diese Klasse ist eine dünne Hülle, die
- * zusätzlich Lauf-Reports liefert.
+ * Orchestrates garbage collection of the metadata cache. The actual eviction
+ * logic is delegated to the configured TYPO3 cache backend (e.g.
+ * {@see \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend::collectGarbage()},
+ * Redis/Valkey expiration, etc.). This class is a thin wrapper that also
+ * produces run reports.
  */
 final readonly class RunGarbageCollection
 {

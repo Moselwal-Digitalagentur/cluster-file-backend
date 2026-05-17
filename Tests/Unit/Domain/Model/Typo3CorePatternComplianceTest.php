@@ -14,14 +14,14 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Regression: vor dem Fix (TYPO3-Core-Pattern-Übernahme) lehnten unsere
- * Domain-VOs legitime Identifier und Tags ab, die TYPO3 Core verwendet
- * (`%`, `&`). Die Pattern-Konstanten sind nun strikt an
+ * Regression: before the fix (TYPO3 core pattern adoption) our domain VOs
+ * rejected legitimate identifiers and tags that TYPO3 core uses (`%`, `&`).
+ * The pattern constants are now strictly aligned with
  * {@see \TYPO3\CMS\Core\Cache\Frontend\FrontendInterface::PATTERN_ENTRYIDENTIFIER}
- * und `::PATTERN_TAG` ausgerichtet.
+ * and `::PATTERN_TAG`.
  *
- * Wenn dieser Test fehlschlägt, würde das Backend bei einem TYPO3-Cache-Frontend,
- * das z. B. einen `%`-Tag setzt, sofort eine Exception werfen.
+ * If this test fails the backend would immediately throw on a TYPO3 cache
+ * frontend that, for example, sets a tag containing `%`.
  */
 #[CoversClass(CacheIdentifier::class)]
 #[CoversClass(TagSet::class)]
@@ -32,7 +32,7 @@ final class Typo3CorePatternComplianceTest extends TestCase
      */
     public static function validTypo3CoreIdentifiers(): iterable
     {
-        // Aus TYPO3 Core gesehen / dokumentiert:
+        // As seen / documented in TYPO3 core:
         yield 'simple alphanumeric' => ['pages_42_lang_0'];
         yield 'identifier with percent' => ['cf-%abc%-key'];
         yield 'identifier with ampersand' => ['key&detail'];

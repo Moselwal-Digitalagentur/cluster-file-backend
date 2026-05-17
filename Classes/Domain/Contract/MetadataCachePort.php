@@ -11,13 +11,13 @@ use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
 
 /**
- * Schmaler Vertrag für das Lesen/Schreiben/Invalidieren der zentralen
- * Cache-Metadaten. Die einzige im Paket erlaubte Sicht auf den
- * Metadata-Storage; die konkrete Implementation kapselt ein beliebiges
- * TYPO3-Cache-Frontend (z. B. {@see \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend}).
+ * Narrow contract for reading/writing/invalidating central cache metadata.
+ * The only allowed view onto the metadata storage in this package; the
+ * concrete implementation encapsulates an arbitrary TYPO3 cache frontend
+ * (e.g. {@see \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend}).
  *
- * Dieses Interface kennt KEIN Redis, KEIN Lua, KEIN Connection-Handling —
- * nur Cache-Semantik im Sinne der TYPO3-Cache-API.
+ * This interface knows NOTHING about Redis, Lua, or connection handling —
+ * only cache semantics in the sense of the TYPO3 cache API.
  */
 interface MetadataCachePort
 {

@@ -25,9 +25,9 @@ use Moselwal\Typo3ClusterCache\Tests\Support\InMemoryLocalPayloadStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Spec Edge Case: „Versionserhöhung des Backends" — bei `backendVersion`-
- * Inkrement passen alte Hashes nicht mehr; Einträge fallen sauber in
- * Cache-Miss, ohne falsche Treffer.
+ * Spec edge case: "backend version bump" — when `backendVersion` is
+ * incremented the old hashes no longer match; entries fall cleanly into a
+ * cache miss without false positives.
  */
 final class BackendVersionBumpTest extends TestCase
 {
@@ -55,7 +55,7 @@ final class BackendVersionBumpTest extends TestCase
         );
         $writerV1->execute($namespace, $id, 'payload', new TagSet(), 3600);
 
-        // BackendVersion bump → neue Hash-Inputs
+        // BackendVersion bump → new hash inputs
         $writerV2 = new WriteCacheEntry(
             metadataCache: $kv,
             localStore: $local,
@@ -76,14 +76,14 @@ final class BackendVersionBumpTest extends TestCase
             metrics: $metrics,
         );
 
-        // Vor dem Bump war Hit. Wir schreiben mit V2 → neue Hash, neue Metadata,
-        // alte lokale Datei matcht nicht mehr → bei nächstem get auf demselben Pod
-        // ist Cache-Hit auf NEUE Metadata (lokale Datei wird durch write() neu
-        // geschrieben mit V2-Hash).
+        // Before the bump there was a hit. We write with V2 → new hash, new
+        // metadata, the old local file no longer matches → on the next get
+        // against the same pod we see a cache hit on the NEW metadata (local
+        // file is re-written by write() with the V2 hash).
         $writerV2->execute($namespace, $id, 'payload', new TagSet(), 3600);
         self::assertSame('payload', $reader->execute($namespace, $id));
 
-        // Hash hat sich geändert
+        // Hash has changed
         $meta = $kv->get($id);
         self::assertNotNull($meta);
         self::assertSame(2, $meta->backendVersion->value);

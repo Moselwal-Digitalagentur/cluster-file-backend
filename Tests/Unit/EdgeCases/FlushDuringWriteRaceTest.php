@@ -26,9 +26,9 @@ use Moselwal\Typo3ClusterCache\Tests\Support\InMemoryLocalPayloadStore;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Spec Edge Case T164: Tag-Invalidierung während laufender Schreibvorgänge.
- * In beiden möglichen Reihenfolgen muss der Endzustand deterministisch sein —
- * niemals "valid mit bereits invalidiertem Tag".
+ * Spec edge case T164: tag invalidation while writes are in flight. In both
+ * possible orders the final state must be deterministic — never "valid with
+ * an already invalidated tag".
  */
 final class FlushDuringWriteRaceTest extends TestCase
 {
@@ -79,13 +79,13 @@ final class FlushDuringWriteRaceTest extends TestCase
 
     public function testFlushByTagThenSetResultsInValidEntry(): void
     {
-        // Tag wird invalidiert, BEVOR es überhaupt einen Eintrag gibt
+        // Tag is invalidated BEFORE any entry exists
         $this->flusher->execute($this->namespace, 'tag_x');
 
         $id = new CacheIdentifier('race2');
         $this->writer->execute($this->namespace, $id, 'p', new TagSet(['tag_x']), 3600);
 
-        // Set nach Flush → Eintrag ist neu und gültig
+        // Set after flush → entry is new and valid
         self::assertSame('p', $this->reader->execute($this->namespace, $id));
     }
 
@@ -96,7 +96,7 @@ final class FlushDuringWriteRaceTest extends TestCase
         $this->flusher->execute($this->namespace, 'tag_x');
         $this->writer->execute($this->namespace, $id, 'v2', new TagSet(['tag_x']), 3600);
 
-        // Letztes Set gewinnt — Read liefert v2
+        // Last set wins — read returns v2
         self::assertSame('v2', $this->reader->execute($this->namespace, $id));
     }
 

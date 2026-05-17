@@ -28,8 +28,8 @@ use Moselwal\Typo3ClusterCache\Tests\Support\FakeMetrics;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Spec Edge Case: „Pod-lokales Volume voll" — Schreibversuche müssen
- * kontrolliert scheitern; Reads dürfen keine Inkonsistenzen ausliefern.
+ * Spec edge case: "pod-local volume full" — write attempts must fail in a
+ * controlled way; reads must not deliver inconsistencies.
  */
 final class DiskFullSimulationTest extends TestCase
 {
