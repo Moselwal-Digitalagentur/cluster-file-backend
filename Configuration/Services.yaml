@@ -12,8 +12,6 @@ services:
       - '../Classes/Domain/Exception/*'
 
   _instanceof:
-    Moselwal\Typo3ClusterCache\Domain\Contract\SerializerPort:
-      tags: ['cfb.serializer']
     Moselwal\Typo3ClusterCache\Domain\Contract\CompressorPort:
       tags: ['cfb.compressor']
     Moselwal\Typo3ClusterCache\Domain\Contract\ClockPort:

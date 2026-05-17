@@ -71,11 +71,16 @@ final readonly class ReadCacheEntry
                 state: CacheState::Broken,
                 backendVersion: $metadata->backendVersion,
             );
+            // Broken-State mit mindestens 60s TTL persistieren, damit andere
+            // Pods nicht sofort den korrupten Eintrag erneut anfassen — auch
+            // wenn die ursprüngliche Lifetime fast abgelaufen war. Cap auf
+            // 3600s, damit Broken-Marker nicht unendlich lange überleben.
+            $brokenTtl = max(60, min(3600, $metadata->lifetime->remainingSeconds($now)));
             $this->metadataCache->set(
                 $identifier,
                 $brokenMeta,
                 $metadata->tags->toArray(),
-                $metadata->lifetime->remainingSeconds($now),
+                $brokenTtl,
             );
             $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'broken']);
 

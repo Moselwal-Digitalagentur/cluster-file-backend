@@ -9,8 +9,11 @@ namespace Moselwal\Typo3ClusterCache\Domain\Model;
 
 final readonly class TagSet
 {
+    // Spiegelt TYPO3 Core's FrontendInterface::PATTERN_TAG (TYPO3 14):
+    // `[a-zA-Z0-9_%\-&]{1,250}`. Tag-Anzahl-Limit ist defensive Schranke
+    // gegen unbounded tag growth — Core selbst kennt keine.
     private const int MAX_TAGS = 64;
-    private const string TAG_PATTERN = '/^[a-zA-Z0-9_-]{1,64}$/';
+    private const string TAG_PATTERN = '/^[a-zA-Z0-9_%\-&]{1,250}$/';
 
     /** @var list<string> */
     public array $tags;

@@ -28,6 +28,22 @@ final class SerializerNameTest extends TestCase
         self::assertStringStartsWith('igbinary:', $name->version);
     }
 
+    public function testIgbinaryVersionContainsOnlyMajorNotPatch(): void
+    {
+        if (!\extension_loaded('igbinary')) {
+            self::markTestSkipped('igbinary extension not loaded');
+        }
+        $name = SerializerName::igbinary();
+        // Regression: vor dem Fix war hier z. B. "igbinary:3.2.16" — jeder
+        // Patch-Bump des Moduls hätte den gesamten Cluster-Cache invalidiert.
+        // Jetzt: "igbinary:3" (nur Major-Version).
+        self::assertMatchesRegularExpression(
+            '/^igbinary:(\d+|unknown)$/',
+            $name->version,
+            'igbinary version-tag must contain only the major version (or "unknown")',
+        );
+    }
+
     public function testUnknownNameIsRejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);

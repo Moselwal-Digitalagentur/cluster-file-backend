@@ -9,6 +9,12 @@ namespace Moselwal\Typo3ClusterCache\Domain\Model;
 
 use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
 
+/**
+ * Logischer Namespace eines Cache-Eintrags. Wird ausschließlich für
+ * Observability-Labels (Metric-Tags, Strukturierte-Log-Felder) verwendet —
+ * KEINE Persistenz-Key-Erzeugung, da das die Aufgabe des konfigurierten
+ * TYPO3-Cache-Backends ist.
+ */
 final readonly class CacheNamespace
 {
     private const string INSTANCE_PATTERN = '/^[a-z0-9-]{1,64}$/';
@@ -27,72 +33,14 @@ final readonly class CacheNamespace
         }
     }
 
+    /**
+     * Liefert das logische Namespace-Label `cfb:{env}:{instance}:{cacheName}`
+     * für Observability-Zwecke (Metriken, Logs, CLI-Argument). Dies ist KEIN
+     * Persistenz-Key — die Schlüssel im Metadata-Cache-Backend werden vom
+     * TYPO3-Cache-Frontend selbst gemanagt.
+     */
     public function toKvKeyPrefix(): string
     {
         return \sprintf('cfb:%s:%s:%s', $this->environment->value, $this->instance, $this->cacheName);
-    }
-
-    public function metadataKey(CacheIdentifier $identifier): string
-    {
-        return \sprintf(
-            'cfb:meta:%s:%s:%s:%s',
-            $this->environment->value,
-            $this->instance,
-            $this->cacheName,
-            $identifier->value,
-        );
-    }
-
-    public function generationKey(): string
-    {
-        return \sprintf('cfb:gen:%s:%s:%s', $this->environment->value, $this->instance, $this->cacheName);
-    }
-
-    public function tagForwardKey(string $tag): string
-    {
-        return \sprintf(
-            'cfb:tag:%s:%s:%s:%s',
-            $this->environment->value,
-            $this->instance,
-            $this->cacheName,
-            $tag,
-        );
-    }
-
-    public function tagReverseKey(CacheIdentifier $identifier): string
-    {
-        return \sprintf(
-            'cfb:identifier-tags:%s:%s:%s:%s',
-            $this->environment->value,
-            $this->instance,
-            $this->cacheName,
-            $identifier->value,
-        );
-    }
-
-    public function lockKey(CacheIdentifier $identifier): string
-    {
-        return \sprintf(
-            'cfb:lock:%s:%s:%s:%s',
-            $this->environment->value,
-            $this->instance,
-            $this->cacheName,
-            $identifier->value,
-        );
-    }
-
-    public function frozenKey(): string
-    {
-        return \sprintf('cfb:frozen:%s:%s:%s', $this->environment->value, $this->instance, $this->cacheName);
-    }
-
-    public function gcRunningKey(): string
-    {
-        return \sprintf(
-            'cfb:gc-running:%s:%s:%s',
-            $this->environment->value,
-            $this->instance,
-            $this->cacheName,
-        );
     }
 }

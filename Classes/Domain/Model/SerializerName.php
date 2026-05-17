@@ -26,9 +26,17 @@ final readonly class SerializerName
 
     public static function igbinary(): self
     {
+        // Nur die Major-Version in den Hash aufnehmen — Patch-Updates von
+        // igbinary sind binärkompatibel, eine Cluster-weite Invalidierung
+        // bei jedem Patch wäre desaströs. Format: "igbinary:N" wobei N die
+        // Major-Version ist (z. B. "igbinary:3" für 3.x.y).
         $version = phpversion('igbinary');
+        if (false === $version) {
+            return new self(self::IGBINARY, 'igbinary:unknown');
+        }
+        $major = strtok($version, '.');
 
-        return new self(self::IGBINARY, false !== $version ? 'igbinary:' . $version : 'igbinary:unknown');
+        return new self(self::IGBINARY, 'igbinary:' . (false === $major ? 'unknown' : $major));
     }
 
     public static function phpNative(): self

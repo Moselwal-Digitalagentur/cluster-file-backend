@@ -59,6 +59,7 @@ final class WriteCacheEntry
 
         $existing = $this->metadataCache->get($identifier);
         if (null !== $existing && $existing->hash->equals($hash)) {
+            // Repair-Pfad: gleiche Reihenfolge — lokal zuerst, dann Metadata.
             $this->localStore->write($hash, $compressed);
             $this->metadataCache->set(
                 $identifier,
@@ -72,14 +73,20 @@ final class WriteCacheEntry
             return;
         }
 
+        // Lokal ZUERST schreiben: bei Disk-Fail (ENOSPC, Permission-Verlust)
+        // entsteht KEINE inkonsistente Metadata-Cluster-State. Wenn dann das
+        // Metadata-Set failt, bleibt höchstens eine orphan lokale Datei,
+        // die beim nächsten Pod-Restart (emptyDir-Reset) oder per GC entfernt
+        // wird. Beide Orphans sind harmlos im Vergleich zu „Metadata sagt
+        // valid, alle Pods erleben endlos Blob-Miss".
         $metadata = $this->buildMetadata($identifier, $hash, $checksum, $lifetime, $tags, $compressed);
+        $this->localStore->write($hash, $compressed);
         $this->metadataCache->set(
             $identifier,
             $metadata,
             $tags->toArray(),
             $lifetime->remainingSeconds($this->clock->now()),
         );
-        $this->localStore->write($hash, $compressed);
         $this->metrics->counter('cache_write_total', $this->labels($namespace));
         $this->metrics->histogram(
             'payload_size_bytes',

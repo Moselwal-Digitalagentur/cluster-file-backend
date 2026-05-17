@@ -14,8 +14,10 @@ use Moselwal\Typo3ClusterCache\Application\Invalidate\FlushNamespace;
 use Moselwal\Typo3ClusterCache\Application\Invalidate\RemoveCacheEntry;
 use Moselwal\Typo3ClusterCache\Application\Read\ReadCacheEntry;
 use Moselwal\Typo3ClusterCache\Application\Write\WriteCacheEntry;
+use Moselwal\Typo3ClusterCache\Domain\Contract\ClockPort;
 use Moselwal\Typo3ClusterCache\Domain\Contract\CompressorPort;
 use Moselwal\Typo3ClusterCache\Domain\Contract\MetadataCachePort;
+use Moselwal\Typo3ClusterCache\Domain\Contract\MetricsPort;
 use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
 use Moselwal\Typo3ClusterCache\Domain\Model\BackendVersion;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
@@ -28,8 +30,6 @@ use Moselwal\Typo3ClusterCache\Infrastructure\Compression\GzipCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\Compression\NullCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\Compression\ZstdCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\LocalStore\EmptyDirPayloadStore;
-use Moselwal\Typo3ClusterCache\Infrastructure\Observability\NullMetrics;
-use Moselwal\Typo3ClusterCache\Infrastructure\Time\SystemClock;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use TYPO3\CMS\Core\Cache\Backend\AbstractBackend;
@@ -69,6 +69,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private readonly MetadataCachePort $metadataCache;
     private readonly EmptyDirPayloadStore $localStore;
     private readonly CompressorPort $compressor;
+    private readonly ClockPort $clock;
     private readonly SerializerName $serializer;
     private readonly CompressionName $compressionName;
     private readonly WriteCacheEntry $writer;
@@ -85,7 +86,13 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
      */
     public function __construct(array $options = [])
     {
-        parent::__construct($options);
+        // Bewusst leeres parent-Options-Array: AbstractBackend::__construct
+        // mapt jeden Options-Key auf `set<UcfirstKey>(...)` und wirft sonst
+        // \InvalidArgumentException. Unsere Options sind nested (`namespace`
+        // ist ein Array) und passen nicht zum TYPO3-Setter-Pattern. Wir
+        // validieren stattdessen selbst per JSON-Schema, behalten aber den
+        // TYPO3-Logger-Init und alle anderen Parent-Initialisierungen.
+        parent::__construct([]);
 
         $validator = new OptionsValidator();
         $normalized = $validator->validateAndApplyDefaults($options);
@@ -96,8 +103,9 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->maxPayloadBytes = (int) $normalized['maxPayloadBytes'];
         $this->cfbLogger = $this->logger ?? new NullLogger();
 
-        $metrics = new NullMetrics();
-        $clock = new SystemClock();
+        $metrics = GeneralUtility::makeInstance(MetricsPort::class);
+        $this->clock = GeneralUtility::makeInstance(ClockPort::class);
+        $clock = $this->clock;
 
         $metadataCacheIdentifier = (string) $normalized['metadataCacheIdentifier'];
         $cacheManager = GeneralUtility::makeInstance(CacheManager::class);
@@ -210,7 +218,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         }
 
         return $metadata->state->isValid()
-            && !$metadata->lifetime->isExpired(time());
+            && !$metadata->lifetime->isExpired($this->clock->now());
     }
 
     public function remove(string $entryIdentifier): bool

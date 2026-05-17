@@ -9,7 +9,10 @@ namespace Moselwal\Typo3ClusterCache\Domain\Model;
 
 final readonly class CacheIdentifier
 {
-    private const string PATTERN = '/^[a-zA-Z0-9_.-]{1,250}$/';
+    // Spiegelt TYPO3 Core's FrontendInterface::PATTERN_ENTRYIDENTIFIER (TYPO3 14):
+    // `[a-zA-Z0-9_%\-&]{1,250}`. Strikte Übernahme verhindert, dass das Backend
+    // legitime TYPO3-Core-Identifier ablehnt.
+    private const string PATTERN = '/^[a-zA-Z0-9_%\-&]{1,250}$/';
 
     public function __construct(
         public string $value,
