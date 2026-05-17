@@ -4,6 +4,19 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.2.1] - 2026-05-17
+
+### Changed
+
+- **README**: Big-O-Notation der Komplexitäts-Sektion auf CS-Konventionen
+  korrigiert (Cormen/Knuth):
+  - Kleinbuchstabige, kursive Variablen (`O(`*n*`)`, `O(`*m*`)`,
+    `O(`*k*`)`) statt Großbuchstaben.
+  - `O(1)` für konstante Zeit statt mathematisch problematischem `O(0)`.
+  - Pod-Faktor explizit in der Notation (`O(`*n* · *p*`)`) statt nur im
+    Fließtext.
+  - Notation-Legende vor der Tabelle definiert *n*, *m*, *k*, *p*.
+
 ## [1.2.0] - 2026-05-17
 
 ### Added
@@ -162,6 +175,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[1.2.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.0...v1.2.1
 [1.2.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.1.0...v1.2.0
 [1.1.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.0.1...v1.1.0
 [1.0.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/tags/v1.0.1
