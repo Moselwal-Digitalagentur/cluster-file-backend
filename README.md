@@ -278,22 +278,27 @@ if ($metadata === null) {
 
 ## Complexity — why it's faster in a cluster
 
+Notation: *n* = total entries in the namespace, *m* = entries matching a
+given tag (*m* ≤ *n*), *k* = expired entries at GC time (*k* ≤ *n*), *p* =
+number of pods in the cluster.
+
 | Operation | TYPO3 Core FileBackend | ClusterFileBackend | Speedup |
 |---|---|---|---|
-| `flushByTag` | **O(N_all)** — DirectoryIterator over every cache file, 2× `file_get_contents` per file | **O(M_matching)** — backend reads tag index directly | Different complexity class + tag indexes |
-| `findIdentifiersByTag` | O(N_all) | O(M_matching) | same |
-| `collectGarbage` | O(N_all) per pod | **O(0)** active (Redis TTL auto-expire) or O(N_expired) server-side (DB) | Backend-native + cluster-once |
-| `flush` | O(N_all) per pod | O(N_all) **once server-side** | Constants ~100–1000× smaller; no pod factor |
+| `flushByTag` | **O(*n*)** — DirectoryIterator over every cache file, 2× `file_get_contents` per file | **O(*m*)** — backend reads tag index directly | Different complexity class + tag indexes |
+| `findIdentifiersByTag` | O(*n*) | O(*m*) | same |
+| `collectGarbage` | O(*n* · *p*) — every pod scans its own copy | **O(1)** client-side (Redis TTL auto-expire is asynchronous server work) or O(*k*) server-side (DB) | Backend-native + cluster-once |
+| `flush` | O(*n* · *p*) — every pod unlinks its own copy | O(*n*) **once server-side** | No pod multiplier; constants ~100–1000× smaller |
 
-**Concrete example**: 10,000 cache entries, 100 tagged `site_1`, 5 pods.
+**Concrete example**: *n* = 10,000 cache entries, *m* = 100 tagged `site_1`,
+*p* = 5 pods.
 
 | | File reads | unlink calls | Round-trips |
 |---|---|---|---|
 | Core FileBackend (`flushByTag('site_1')`) | **20,000** | 100 | ~20,100 local FS I/O **per pod** |
 | ClusterFileBackend (Redis) | 0 | 0 | ~2 (SMEMBERS + pipeline DEL) **once cluster-wide** |
 
-It's not just "smaller N": **different complexity class**, **backend-native
-algorithms**, and **no pod multiplier**.
+It's not just "smaller *n*": **different complexity class**,
+**backend-native algorithms**, and **no pod multiplier (·*p*)**.
 
 ## Development
 
