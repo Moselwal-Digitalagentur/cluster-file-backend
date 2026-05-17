@@ -194,10 +194,15 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         }
         $identifier = new CacheIdentifier($entryIdentifier);
         $tagSet = new TagSet(array_values(array_map('strval', $tags)));
-        $lifetimeSeconds = $lifetime ?? $this->cfbDefaultLifetime;
-        if ($lifetimeSeconds < 1) {
-            $lifetimeSeconds = $this->cfbDefaultLifetime;
-        }
+        // TYPO3 BackendInterface convention:
+        //   $lifetime === null → use the backend's default lifetime
+        //   $lifetime === 0    → cache forever (unlimited)
+        //   $lifetime  >  0    → expire after N seconds
+        //   $lifetime  <  0    → invalid; fall back to default
+        $lifetimeSeconds = match (true) {
+            null === $lifetime, $lifetime < 0 => $this->cfbDefaultLifetime,
+            default => $lifetime,
+        };
         try {
             $this->writer->execute($this->namespace, $identifier, $data, $tagSet, $lifetimeSeconds);
         } catch (\Throwable $e) {

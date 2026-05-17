@@ -32,7 +32,18 @@ final readonly class ReadCacheEntry
     public function execute(CacheNamespace $namespace, CacheIdentifier $identifier): ?string
     {
         $labels = $this->labels($namespace);
-        $metadata = $this->metadataCache->get($identifier);
+        try {
+            $metadata = $this->metadataCache->get($identifier);
+        } catch (\Throwable) {
+            // Metadata backend is unreachable (Redis outage, DB lock,
+            // network blip). Treat as cache miss so the TYPO3 frontend
+            // can trigger a caller rebuild instead of crashing the
+            // request — at the cost of higher upstream load until the
+            // backend recovers.
+            $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'metadata-error']);
+
+            return null;
+        }
         if (null === $metadata) {
             $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'no-metadata']);
 

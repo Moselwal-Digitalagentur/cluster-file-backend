@@ -48,4 +48,57 @@ final class LifetimeTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         new Lifetime(createdAt: 2000, expiresAt: 1000);
     }
+
+    public function testFromSecondsRejectsZero(): void
+    {
+        // Zero is reserved for unlimited — callers must use ::unlimited().
+        $clock = new class implements ClockPort {
+            public function now(): int
+            {
+                return 1000;
+            }
+        };
+        $this->expectException(\InvalidArgumentException::class);
+        Lifetime::fromSeconds(0, $clock);
+    }
+
+    public function testUnlimitedIsNeverExpired(): void
+    {
+        $clock = new class implements ClockPort {
+            public function now(): int
+            {
+                return 1_700_000_000;
+            }
+        };
+        $lifetime = Lifetime::unlimited($clock);
+        self::assertTrue($lifetime->isUnlimited());
+        self::assertFalse($lifetime->isExpired($clock->now()));
+        // Even a far-future check stays valid.
+        self::assertFalse($lifetime->isExpired(2_000_000_000));
+    }
+
+    public function testUnlimitedExpiresAtMatchesTypo3CoreConvention(): void
+    {
+        $clock = new class implements ClockPort {
+            public function now(): int
+            {
+                return 1_700_000_000;
+            }
+        };
+        $lifetime = Lifetime::unlimited($clock);
+        // Mirrors Typo3DatabaseBackend::FAKED_UNLIMITED_EXPIRE = 2147483647
+        // (last second of 32-bit Unix epoch, "Y2K38").
+        self::assertSame(Lifetime::UNLIMITED_EXPIRES_AT, $lifetime->expiresAt);
+    }
+
+    public function testFiniteLifetimeIsNotUnlimited(): void
+    {
+        $clock = new class implements ClockPort {
+            public function now(): int
+            {
+                return 1_700_000_000;
+            }
+        };
+        self::assertFalse(Lifetime::fromSeconds(60, $clock)->isUnlimited());
+    }
 }

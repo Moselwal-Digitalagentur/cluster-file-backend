@@ -55,7 +55,9 @@ final class WriteCacheEntry
             $this->backendVersion,
         );
         $checksum = PayloadChecksum::ofBytes($compressed);
-        $lifetime = Lifetime::fromSeconds($lifetimeSeconds, $this->clock);
+        $lifetime = 0 === $lifetimeSeconds
+            ? Lifetime::unlimited($this->clock)
+            : Lifetime::fromSeconds($lifetimeSeconds, $this->clock);
 
         $existing = $this->metadataCache->get($identifier);
         if (null !== $existing && $existing->hash->equals($hash)) {
@@ -65,7 +67,7 @@ final class WriteCacheEntry
                 $identifier,
                 $this->buildMetadata($identifier, $hash, $checksum, $lifetime, $tags, $compressed),
                 $tags->toArray(),
-                $lifetime->remainingSeconds($this->clock->now()),
+                $this->ttlForBackend($lifetime),
             );
             $this->metrics->counter('payload_rebuild_total', $this->labels($namespace));
             $this->metrics->counter('repair_success_total', $this->labels($namespace));
@@ -116,6 +118,20 @@ final class WriteCacheEntry
             state: CacheState::Valid,
             backendVersion: $this->backendVersion,
         );
+    }
+
+    /**
+     * Translates the domain Lifetime into the integer TTL semantics of the
+     * TYPO3 metadata cache API: `0` means "cache forever", `>0` means
+     * "expire after N seconds". Matches `Typo3DatabaseBackend::set()`.
+     */
+    private function ttlForBackend(Lifetime $lifetime): int
+    {
+        if ($lifetime->isUnlimited()) {
+            return 0;
+        }
+
+        return $lifetime->remainingSeconds($this->clock->now());
     }
 
     /**

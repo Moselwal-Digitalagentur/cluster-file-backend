@@ -45,11 +45,16 @@ final readonly class Typo3MetadataCache implements MetadataCachePort
 
     public function set(CacheIdentifier $identifier, CacheMetadata $metadata, array $tags, int $ttlSeconds): void
     {
+        // TYPO3 cache-frontend convention: lifetime === 0 → forever,
+        // lifetime === null → use the frontend's default. We propagate
+        // 0 explicitly so the consumer's `defaultLifetime` cannot
+        // accidentally shorten an entry that the caller marked as
+        // unlimited.
         $this->cache->set(
             $identifier->value,
             $metadata->toKvPayload(),
             $tags,
-            $ttlSeconds > 0 ? $ttlSeconds : null,
+            $ttlSeconds,
         );
     }
 

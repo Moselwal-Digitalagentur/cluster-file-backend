@@ -408,6 +408,42 @@ For a stateless cluster:
   blob-miss spike. For zero-degradation deploys, run a `Recreate`
   strategy or pre-flush via the warm-up command.
 
+## Operational requirements
+
+### Pod clock synchronisation
+
+Cache lifetimes are evaluated against each pod's local clock
+(`SystemClock::now()` → `time()`). If pods disagree on wall-clock time by
+more than a few seconds, a pod whose clock runs ahead will treat entries
+as expired earlier than peers — leading to extra rebuilds (correctness
+stays intact, only performance degrades).
+
+In Kubernetes this is normally a non-issue: nodes run `chrony` or
+`systemd-timesyncd` against the cluster NTP, and pods inherit the node
+clock. Worth a sanity check during incidents:
+
+```bash
+kubectl exec deploy/typo3 -- date -u
+```
+
+A skew above ~30 seconds across pods is the threshold where
+`blob_miss_total` and `cache_miss_total{reason=expired}` start to drift
+visibly in Prometheus.
+
+### Metadata cache availability
+
+The metadata cache (Redis/Valkey/DB) is the single source of truth.
+When it is unreachable:
+
+- **Reads degrade gracefully** to cache misses; the TYPO3 frontend
+  triggers caller rebuilds. The application keeps serving, but upstream
+  load (DB queries, render time) spikes.
+- **Writes surface the underlying exception** so the caller can decide
+  how to handle it. This is intentional — silently swallowing write
+  failures would mask outages.
+
+Alert on `cache_miss_total{reason=metadata-error}` for early detection.
+
 ## Common pitfalls
 
 - **`localPath` must be writable.** With a read-only `/app` image, mount

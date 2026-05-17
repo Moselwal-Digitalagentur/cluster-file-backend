@@ -4,6 +4,45 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.0] - 2026-05-17
+
+### Fixed
+
+- **`lifetime === 0` bedeutet jetzt "cache forever"** (TYPO3-Konvention,
+  siehe `Typo3DatabaseBackend::FAKED_UNLIMITED_EXPIRE`). Vorher wurde
+  `0` als "ungültig" interpretiert und auf `defaultLifetimeSeconds`
+  zurückgesetzt — system-Caches (`cache_core`, `cache_runtime` etc.)
+  bekamen dadurch ungewollt eine TTL und wurden nach 3600s evicted.
+  **Production-Impact**: schleichende Cache-Misses für system-Caches.
+
+### Added
+
+- **`Lifetime::unlimited(ClockPort)`** Factory + `Lifetime::isUnlimited()`
+  + `Lifetime::UNLIMITED_EXPIRES_AT = 2147483647` (TYPO3-Core-Konvention).
+- **Graceful Degradation bei Metadata-Cache-Ausfall**:
+  `ReadCacheEntry::execute()` fängt Exceptions vom MetadataCache,
+  returnt `null` (= Cache-Miss) und inkrementiert die neue
+  Metrik-Reason `cache_miss_total{reason=metadata-error}`. Damit
+  überlebt die App einen Redis-Outage ohne Crash — auf Kosten von
+  erhöhter Upstream-Last bis das Backend wieder erreichbar ist.
+- **Drei neue Edge-Case-Tests**:
+  - `Tests/Unit/EdgeCases/UnlimitedLifetimeTest.php` — verifiziert das
+    `lifetime=0`-Verhalten Ende-zu-Ende (write → metadata-flag →
+    read nach 10 Jahren).
+  - `Tests/Unit/EdgeCases/MetadataCacheOfflineTest.php` — verifiziert
+    graceful Degradation bei Backend-Ausfall (read returnt null,
+    write surfaced Exception, keine Orphan-Inflation).
+  - `Tests/Unit/EdgeCases/ConcurrentWriteTest.php` — verifiziert
+    Last-Writer-Wins-Semantik + Orphan-Verhalten bei gleichzeitigen
+    Cross-Pod-Writes.
+
+### Changed
+
+- **README**: neue Section **"Operational requirements"** mit Subsections
+  zu Pod-Clock-Synchronisation (chrony / systemd-timesyncd in
+  Kubernetes) und Metadata-Cache-Verfügbarkeit (Alert-Empfehlung auf
+  `cache_miss_total{reason=metadata-error}`).
+
 ## [1.2.1] - 2026-05-17
 
 ### Changed
@@ -175,6 +214,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[1.3.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.1...v1.3.0
 [1.2.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.0...v1.2.1
 [1.2.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.1.0...v1.2.0
 [1.1.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.0.1...v1.1.0
