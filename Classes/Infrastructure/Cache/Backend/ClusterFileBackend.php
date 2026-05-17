@@ -1,7 +1,7 @@
 <?php
 
 // SPDX-FileCopyrightText: 2026 Moselwal GmbH
-// SPDX-License-Identifier: GPL-2.0-or-later
+// SPDX-License-Identifier: MIT
 
 declare(strict_types=1);
 
@@ -64,6 +64,8 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private CacheNamespace $namespace;
     private readonly EnvironmentName $environment;
     private readonly string $instance;
+    private readonly string $localPath;
+    private readonly string $metadataCacheIdentifier;
     private readonly int $cfbDefaultLifetime;
     private readonly int $maxPayloadBytes;
     private readonly MetadataCachePort $metadataCache;
@@ -99,6 +101,8 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
 
         $this->environment = EnvironmentName::from((string) $normalized['namespace']['environment']);
         $this->instance = (string) $normalized['namespace']['instance'];
+        $this->localPath = (string) $normalized['localPath'];
+        $this->metadataCacheIdentifier = (string) $normalized['metadataCacheIdentifier'];
         $this->cfbDefaultLifetime = (int) $normalized['defaultLifetimeSeconds'];
         $this->maxPayloadBytes = (int) $normalized['maxPayloadBytes'];
         $this->cfbLogger = $this->logger ?? new NullLogger();
@@ -107,17 +111,16 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->clock = GeneralUtility::makeInstance(ClockPort::class);
         $clock = $this->clock;
 
-        $metadataCacheIdentifier = (string) $normalized['metadataCacheIdentifier'];
         $cacheManager = GeneralUtility::makeInstance(CacheManager::class);
         $this->metadataCache = new Typo3MetadataCache(
-            $this->resolveMetadataFrontend($cacheManager, $metadataCacheIdentifier),
+            $this->resolveMetadataFrontend($cacheManager, $this->metadataCacheIdentifier),
         );
 
         $this->serializer = $this->resolveSerializer((string) $normalized['serializer']);
         $this->compressor = $this->resolveCompressor((string) $normalized['compression']);
         $this->compressionName = CompressionName::fromString($this->compressor->name());
 
-        $this->localStore = new EmptyDirPayloadStore((string) $normalized['localPath']);
+        $this->localStore = new EmptyDirPayloadStore($this->localPath);
         $this->namespace = new CacheNamespace($this->environment, $this->instance, 'unbound');
 
         $this->writer = new WriteCacheEntry(
@@ -142,6 +145,34 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->namespaceFlusher = new FlushNamespace($this->metadataCache, $metrics);
         $this->tagFlusher = new FlushByTag($this->metadataCache, $metrics);
         $this->gcRunner = new RunGarbageCollection($this->metadataCache, $clock);
+    }
+
+    /**
+     * The TYPO3 cache frontend identifier configured via `metadataCacheIdentifier`.
+     * Consumed by deployment-time helpers (warm-up runner, health checks).
+     */
+    public function getMetadataCacheIdentifier(): string
+    {
+        return $this->metadataCacheIdentifier;
+    }
+
+    /**
+     * Absolute path on the local (ephemeral) filesystem where this backend
+     * materialises payloads. Consumed by deployment-time helpers.
+     */
+    public function getLocalPath(): string
+    {
+        return $this->localPath;
+    }
+
+    public function getNamespaceEnvironment(): EnvironmentName
+    {
+        return $this->environment;
+    }
+
+    public function getNamespaceInstance(): string
+    {
+        return $this->instance;
     }
 
     public function setCache(FrontendInterface $cache): void

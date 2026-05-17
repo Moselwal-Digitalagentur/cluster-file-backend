@@ -32,4 +32,16 @@ services:
     tags:
       - name: 'console.command'
         command: 'clusterfilebackend:gc'
-        description: 'Garbage-Collection für ClusterFileBackend-Metadaten'
+        description: 'Garbage collection for ClusterFileBackend metadata'
+
+  Moselwal\Typo3ClusterCache\Presentation\Command\WarmUpCommand:
+    public: true
+    tags:
+      - name: 'console.command'
+        command: 'clusterfilebackend:warmup'
+        description: 'Pre-flight warm-up of cluster-cache namespaces (deployment-time)'
+
+  Moselwal\Typo3ClusterCache\Presentation\EventListener\CacheWarmupListener:
+    tags:
+      - name: 'event.listener'
+        event: 'TYPO3\CMS\Core\Cache\Event\CacheWarmupEvent'

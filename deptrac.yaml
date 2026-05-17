@@ -58,6 +58,9 @@ deptrac:
         Presentation:
             - Domain
             - Application
+            - Infrastructure   # CLI commands & event listeners are wiring
+                               # code; they may compose infrastructure
+                               # adapters directly.
             - TYPO3Framework
             - SymfonyFramework
             - PsrContract

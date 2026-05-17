@@ -1,187 +1,179 @@
 # cluster-file-backend
 
-**Clusterfähiges TYPO3-14-Cache-Backend ohne Shared Filesystem.**
+**Cluster-aware TYPO3 14 cache backend — no shared filesystem.**
 
-Drop-in-Ersatz für `TYPO3\CMS\Core\Cache\Backend\FileBackend` und `SimpleFileBackend`
-in Kubernetes-Deployments. Cache-Gültigkeit kommt aus einem **zweiten** TYPO3-Cache-
-Frontend (das der Anwender frei konfiguriert), Payloads werden **pod-lokal** als
-atomar geschriebene Dateien materialisiert.
+Drop-in replacement for `TYPO3\CMS\Core\Cache\Backend\FileBackend` and
+`SimpleFileBackend` in Kubernetes deployments. Cache validity is sourced from
+a **second** TYPO3 cache frontend (which you configure freely); payloads are
+materialised pod-locally as atomically written files.
 
-- **Composer-Paket**: `moselwal/cluster-file-backend`
-- **Extension-Key**: `cluster_file_backend`
-- **Namespace**: `Moselwal\Typo3ClusterCache\`
-- **TYPO3**: 14.x (Composer-Mode-only — kein `ext_emconf.php`)
+- **Composer package**: `moselwal/cluster-file-backend`
+- **Extension key**: `cluster_file_backend`
+- **PHP namespace**: `Moselwal\Typo3ClusterCache\`
+- **TYPO3**: 14.3+ (Composer Mode only — no `ext_emconf.php`)
 - **PHP**: 8.5+
-- **Lizenz**: GPL-2.0-or-later
+- **License**: MIT
 
-## Architektur in einer Zeile
+## Architecture in one diagram
 
-> Dieses Paket weiß **nichts** über Redis/Valkey/KV-Stores. Es spricht ausschließlich
-> mit der TYPO3-Cache-API und delegiert die Cluster-Persistenz an ein vom Anwender
-> gewähltes TYPO3-Cache-Backend.
+> This package knows **nothing** about Redis/Valkey/KV stores. It speaks only
+> to the TYPO3 cache API and delegates cluster persistence to a TYPO3 cache
+> backend of your choice.
 
 ```
 TYPO3 Cache API → ClusterFileBackend
                       │
-                      ├─► Metadata-Cache (anderes TYPO3-Cache-Frontend,
-                      │   Backend frei wählbar: KeyValueBackend, Database,
-                      │   Memcached, …)
+                      ├─► Metadata cache (a second TYPO3 cache frontend;
+                      │   backend is your choice: Typo3DatabaseBackend,
+                      │   KeyValueBackend, MemcachedBackend, …)
                       │
-                      └─► Local Payload Store (pod-lokal, emptyDir)
+                      └─► Local payload store (pod-local, emptyDir)
 ```
 
-## Was es ist
+## What it is
 
-- **Kein RWX-Volume** zwischen Pods erforderlich.
-- **Zentrale Cache-Gültigkeit** über die TYPO3-Cache-API.
-- **Deterministische Wiederherstellung** über sha256-Hash-Validierung.
-- **Tag-basierte Invalidierung** clusterweit (via TYPO3-`TaggableBackendInterface`).
-- **Garbage Collection** über CLI (`clusterfilebackend:gc`) — delegiert an das
-  Metadata-Cache-Backend.
+- **No RWX volume** required between pods.
+- **Central cache validity** via the TYPO3 cache API.
+- **Deterministic re-materialisation** via sha256 hash validation.
+- **Tag-based invalidation** cluster-wide (through TYPO3's `TaggableBackendInterface`).
+- **Garbage collection** via CLI (`clusterfilebackend:gc`) — delegated to the
+  metadata cache backend.
+- **Deployment-time warm-up** via CLI (`clusterfilebackend:warmup`) and a
+  listener on TYPO3's `CacheWarmupEvent`.
 
-## Was es **nicht** ist
+## What it is **not**
 
-- Kein Ersatz für TYPO3 FAL.
-- Kein Ersatz für fileadmin.
-- Kein Ersatz für den TYPO3 Core Cache (`var/cache/code/core` bleibt im Image deployt).
-- Kein Session-Store.
-- Kein generischer Blob-Store.
-- Kein Distributed Filesystem.
-- **Bringt kein eigenes Redis/Valkey-Wissen mit.** Wer Redis als Cluster-Storage will,
-  konfiguriert ein TYPO3-Cache-Backend dafür (z. B. `moselwal/keyvalue-store`s
-  `KeyValueBackend`) und verweist `ClusterFileBackend` per `metadataCacheIdentifier`
-  darauf.
+- Not a replacement for TYPO3 FAL.
+- Not a replacement for fileadmin.
+- Not a replacement for TYPO3 Core's code cache (`var/cache/code/core` stays
+  in the container image).
+- Not a session store.
+- Not a generic blob store.
+- Not a distributed filesystem.
+- **Carries no Redis/Valkey knowledge.** If you want Redis as cluster storage,
+  install a TYPO3 cache backend for it (e.g. `moselwal/keyvalue-store`'s
+  `KeyValueBackend`) and point `ClusterFileBackend` at it via
+  `metadataCacheIdentifier`.
 
-## Setup-Voraussetzungen — was DU machen musst
+## Setup prerequisites — what YOU need to do
 
-> Dieses Paket liefert **bewusst keine Auto-Cache-Konfiguration** mit, weil
-> Hostname/Port/TLS/Pfad des Cluster-Stores immer site-spezifisch sind. Du
-> musst die folgenden Schritte manuell einmalig durchführen.
+> This package intentionally ships **no automatic cache registration**.
+> Hostnames, ports, TLS, paths are inherently site-specific. The steps below
+> are one-time setup.
 
-### Pflicht-Schritte
+### Required steps
 
-1. **Composer-Abhängigkeit installieren** (siehe „Installation" unten).
-2. **Ein cluster-fähiges Cache-Backend für die Metadaten bereitstellen** —
-   typischerweise ein Redis-/Valkey-Service im Cluster. Wir empfehlen
-   `moselwal/keyvalue-store`, das einen TYPO3-Cache-Backend-Adapter mit TLS/
-   Sentinel-Support liefert. **Was wir liefern**: nichts davon — Du musst den
-   Service deployen und ein TYPO3-Cache-Backend-Paket für ihn installieren.
-3. **Ein TYPO3-Cache-Frontend `cluster_meta` (oder einen Namen deiner Wahl)
-   registrieren** — das ist das zweite Cache-Frontend, das unsere Metadata
-   hält. **Wir liefern**: ein Beispiel-Snippet (siehe unten), KEINE
-   automatische Registrierung.
-4. **Die zu ersetzenden TYPO3-Caches** (`pages`, `pagesection`, `rootline`,
-   `imagesizes`, `assets`, `hash`) **auf `ClusterFileBackend` umkonfigurieren**
-   und auf `cluster_meta` per `metadataCacheIdentifier` verweisen lassen.
-   **Wir liefern**: ebenfalls als Beispiel-Snippet.
-5. **Pod-lokales `emptyDir` mounten** an `/app/var/cache/cluster/` (oder
-   beliebig anderer Pfad, der in `localPath` referenziert wird).
+1. **Install via Composer** (see below).
+2. **Provide a cluster-capable cache backend for metadata.** Out of the box,
+   the default example uses TYPO3 Core's `Typo3DatabaseBackend`, which works
+   without any extra dependency as long as your database is reachable from
+   all pods (Galera, RDS Multi-AZ, etc.). For higher performance, install
+   `moselwal/keyvalue-store` and use its `KeyValueBackend`.
+3. **Register a TYPO3 cache frontend** (we call it `cluster_meta` by
+   convention) that holds the metadata.
+4. **Reconfigure the file-based TYPO3 caches** (`pages`, `pagesection`,
+   `rootline`, `imagesizes`, `assets`, `hash`) to use `ClusterFileBackend`
+   and reference `cluster_meta` via `metadataCacheIdentifier`.
+5. **Mount a pod-local `emptyDir`** at `/app/var/cache/cluster/` (or
+   wherever `localPath` points).
 
-### Was wir mitliefern
+### What we ship
 
-| Artefakt | Pfad im Paket | Zweck |
+| Artefact | Path in package | Purpose |
 |---|---|---|
-| **Beispiel-Konfiguration** (vollständig, copy-paste-fertig) | `Configuration/Example/cache-configurations.example.php` | Vollständige Setup für `cluster_meta` + alle Standard-Caches |
-| **JSON-Schema der Options** | `Configuration/Backend/ClusterFileBackend.options.schema.json` | Wird vom Konstruktor validiert; bei Fehlkonfiguration sofortige `InvalidCacheException` mit Pfad zum fehlerhaften Feld |
-| **CLI für GC** | `clusterfilebackend:gc` (via `Configuration/Commands.php`) | Wird automatisch registriert sobald die Extension installiert ist |
-| **DI-Bindings** | `Configuration/Services.yaml` | Auto-Discovery für `MetricsPort`, `ClockPort`, `CompressorPort` |
+| **Default config (no extra deps)** | `Configuration/Example/cache-configurations.example.php` | Database-backed metadata + cluster file caches. Works on any TYPO3 install. |
+| **Redis/Valkey config (optional)** | `Configuration/Example/cache-configurations-redis.example.php` | High-performance variant using `moselwal/keyvalue-store` |
+| **JSON Schema** | `Configuration/Backend/ClusterFileBackend.options.schema.json` | Validated at backend construction; misconfiguration raises `InvalidCacheException` with the offending field |
+| **CLI commands** | `Configuration/Commands.php` | `clusterfilebackend:gc`, `clusterfilebackend:warmup` |
+| **Event listener** | `Configuration/Services.yaml` | Wires into TYPO3's `CacheWarmupEvent` so `bin/typo3 cache:warmup` triggers our warm-up too |
+| **DI bindings** | `Configuration/Services.yaml` | Auto-discovery for `MetricsPort`, `ClockPort`, `CompressorPort` |
 
-### Konstruktor-Validierung — was passiert, wenn du etwas vergisst
+### Constructor validation
 
-Der `ClusterFileBackend`-Konstruktor validiert die übergebenen Options via
-JSON-Schema. **Pflichtfelder** (führt sonst zu `InvalidCacheException`):
+The `ClusterFileBackend` constructor validates options against a JSON schema.
+**Mandatory fields** (otherwise `InvalidCacheException`):
 
-- `localPath` (string, absoluter Pfad)
-- `metadataCacheIdentifier` (string, Name des `cluster_meta`-Frontends)
+- `localPath` (string, absolute path)
+- `metadataCacheIdentifier` (string, name of the metadata cache frontend)
 - `namespace.environment` (`prod` | `staging` | `testing` | `development`)
-- `namespace.instance` (string, slug-pattern `[a-z0-9-]{1,64}`)
+- `namespace.instance` (string, slug `[a-z0-9-]{1,64}`)
 
-**Optionale Felder mit Defaults** (siehe `Configuration/Backend/ClusterFileBackend.options.schema.json`):
+**Optional fields with defaults**:
 
-| Option | Default | Bedeutung |
+| Option | Default | Meaning |
 |---|---|---|
 | `compression` | `zstd` | `zstd` \| `gzip` \| `none` |
 | `serializer` | `igbinary` | `igbinary` \| `php` |
-| `defaultLifetimeSeconds` | `3600` | TTL falls Caller `null` übergibt |
-| `maxPayloadBytes` | `10485760` (10 MB) | Schreibvorgänge mit größeren Payloads werden mit `InvalidDataException` abgelehnt |
+| `defaultLifetimeSeconds` | `3600` | TTL when caller passes `null` |
+| `maxPayloadBytes` | `10485760` (10 MB) | Writes larger than this are rejected with `InvalidDataException` |
 
-Wenn das `metadataCacheIdentifier`-Cache-Frontend nicht registriert ist,
-schlägt der Konstruktor **sofort** mit einer Meldung fehl, die den
-Konfig-Pfad nennt — kein stilles Failen erst beim ersten `set()`.
-
----
+If the configured `metadataCacheIdentifier` is not registered as a TYPO3
+cache, the constructor fails **immediately** with a message that names the
+config path — no silent failure on first `set()`.
 
 ## Installation
 
 ```bash
 composer require moselwal/cluster-file-backend:^1.0.1
-# Optional, aber empfohlen für Production: Redis/Valkey-Backend mit TLS/Sentinel
+# Optional for production: Redis/Valkey backend with TLS / Sentinel
 composer require moselwal/keyvalue-store
 ```
 
-Wir liefern **kein Auto-Loader-Snippet** für die Cache-Konfiguration —
-TYPO3 14 kennt keine standardisierte Konvention für „Extension liefert
-Default-Cache-Configs", weil diese inhärent site-spezifisch sind.
+## Configuration
 
-## Konfiguration
+### Quick start (zero extra dependencies)
 
-### Quick-Start: Beispiel-Snippet übernehmen
-
-Die schnellste Variante: kopiere den Inhalt von
+Copy the contents of
 `vendor/moselwal/cluster-file-backend/Configuration/Example/cache-configurations.example.php`
-in deine `config/system/settings.php` (oder `additional.php`) und passe Hostname,
-Port und ggf. TLS/Sentinel an.
+into your `config/system/settings.php` (or `additional.php`) and adjust
+`environment`, `instance`, and `localPath` to your deployment.
 
-Das Snippet konfiguriert:
-- ein `cluster_meta`-Frontend mit `KeyValueBackend` (Redis/Valkey),
-- alle Standard-File-Caches (`pages`, `pagesection`, `rootline`, `imagesizes`,
-  `assets`, `hash`) auf `ClusterFileBackend`,
-- Pod-lokalen Cache-Pfad `/app/var/cache/cluster/<cacheName>`,
-- `environment`/`instance` aus Env-Variablen `TYPO3_ENV` / `TYPO3_INSTANCE`.
+This example uses TYPO3 Core's `Typo3DatabaseBackend` for the metadata cache
+— no extra Composer dependency required. It's cluster-safe when your
+database is clustered.
 
-### Schritt für Schritt (wenn du es manuell aufsetzen willst)
+### Redis/Valkey variant
 
-**Schritt 1**: Definiere einen TYPO3-Cache, der die Metadaten persistiert. Welches
-Backend du wählst, ist deine Entscheidung — alles, was die TYPO3-Cache-API
-implementiert, funktioniert (inkl. `TaggableBackendInterface` für `flushByTag`).
+For sub-millisecond metadata latency, copy
+`Configuration/Example/cache-configurations-redis.example.php` instead. It
+uses `moselwal/keyvalue-store`'s `KeyValueBackend` with optional TLS and
+Sentinel support.
+
+### Manual setup
+
+**Step 1**: Define a TYPO3 cache frontend that persists metadata. Any backend
+that implements `TaggableBackendInterface` (for `flushByTag` support) works.
 
 ```php
-// Beispiel: Redis-Backend via moselwal/keyvalue-store
 $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['cluster_meta'] = [
     'frontend' => \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend::class,
-    'backend'  => \Moselwal\KeyValueStore\Cache\Backend\KeyValueBackend::class,
-    'options'  => [
-        'hostname' => 'valkey',
-        'port'     => 6379,
-        // TLS / Sentinel / Backoff: siehe moselwal/keyvalue-store
-    ],
+    'backend'  => \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend::class,
+    'options'  => [],
+    'groups'   => ['system'],
 ];
-
-// Alternative ohne KV — DB-Cluster:
-//   'backend' => \TYPO3\CMS\Core\Cache\Backend\Typo3DatabaseBackend::class,
 ```
 
-**Schritt 2**: Verweise `ClusterFileBackend` auf diesen Cache.
+**Step 2**: Point `ClusterFileBackend` at the metadata cache.
 
 ```php
-$GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations']['pages'] = [
-    'backend' => \Moselwal\Typo3ClusterCache\Infrastructure\Cache\Backend\ClusterFileBackend::class,
-    'options' => [
-        'localPath'               => '/app/var/cache/cluster/pages',
-        'metadataCacheIdentifier' => 'cluster_meta',
-        'namespace' => [
-            'environment' => 'prod',
-            'instance'    => 'website-a',
+foreach (['pages', 'pagesection', 'rootline'] as $cacheName) {
+    $GLOBALS['TYPO3_CONF_VARS']['SYS']['caching']['cacheConfigurations'][$cacheName] = [
+        'frontend' => \TYPO3\CMS\Core\Cache\Frontend\VariableFrontend::class,
+        'backend'  => \Moselwal\Typo3ClusterCache\Infrastructure\Cache\Backend\ClusterFileBackend::class,
+        'options'  => [
+            'localPath'               => '/app/var/cache/cluster/' . $cacheName,
+            'metadataCacheIdentifier' => 'cluster_meta',
+            'namespace' => [
+                'environment' => 'prod',
+                'instance'    => 'website-a',
+            ],
         ],
-        // Defaults: compression=zstd, serializer=igbinary,
-        // defaultLifetimeSeconds=3600, maxPayloadBytes=10MB.
-    ],
-];
+        'groups' => ['pages'],
+    ];
+}
 ```
 
-Vollständige Konfigurations-Referenz: `Configuration/Backend/ClusterFileBackend.options.schema.json`.
-
-## Kubernetes-Deployment (Auszug)
+## Kubernetes deployment (excerpt)
 
 ```yaml
 volumes:
@@ -191,6 +183,32 @@ volumeMounts:
   - name: cluster-cache
     mountPath: /app/var/cache/cluster
 ```
+
+### Deployment-time warm-up
+
+After a rolling deploy you typically want every new pod to verify it can
+reach the metadata cache and that its `localPath` is writable before it
+starts serving requests. Trigger our warm-up explicitly:
+
+```bash
+./vendor/bin/typo3 clusterfilebackend:warmup \
+    --namespace=cfb:prod:website-a:pages \
+    --namespace=cfb:prod:website-a:pagesection \
+    --namespace=cfb:prod:website-a:rootline
+```
+
+The command emits one JSON line per namespace and exits non-zero if any
+namespace fails health checks. Hook this into your readiness/startup probe
+or post-deploy job.
+
+Alternatively, run TYPO3's standard cache warm-up — our event listener
+hooks into `cache:warmup` automatically:
+
+```bash
+./vendor/bin/typo3 cache:warmup
+```
+
+### Garbage collection
 
 ```yaml
 apiVersion: batch/v1
@@ -209,166 +227,101 @@ spec:
               args: ["clusterfilebackend:gc", "--namespace=cfb:prod:website-a:pages"]
 ```
 
-## Architektur (intern)
+## Cluster consistency — what happens on cache-clear?
 
-DDD 4-Layer (Domain → Application → Infrastructure → Presentation), enforced via
-`deptrac`. Die einzige Außenschnittstelle für „zentrale Wahrheit" ist der
-`MetadataCachePort` — implementiert vom `Typo3MetadataCache`-Adapter, der jeden
-beliebigen TYPO3-`FrontendInterface` annimmt.
+> Frequently asked: "When an editor clicks *Clear all caches* in the TYPO3
+> backend, how do we make sure **all** pods see it?"
 
-Details:
-- `specs/001-cluster-cache-backend/spec.md`
-- `specs/001-cluster-cache-backend/plan.md`
-- `specs/001-cluster-cache-backend/research.md`
-- `specs/001-cluster-cache-backend/data-model.md`
-- `specs/001-cluster-cache-backend/contracts/`
-- `.specify/memory/constitution.md`
+Short answer: the pod handling the click clears the central metadata cache.
+All other pods see it on their next `get()` because they query the central
+metadata cache, not their local filesystem. **No pod-to-pod sync needed**,
+because metadata truth never lives on a pod.
 
-## Entwicklung
-
-```bash
-composer install
-composer test               # Unit-Tests
-composer test:contract      # Contract-Tests
-composer test:functional    # Functional (benötigt TYPO3-Testing-Framework-Bootstrap)
-composer phpstan            # PHPStan Level 8
-composer deptrac            # DDD-Layer-Check
-composer cs:check           # PER-CS3x0 + Symfony
-composer deprecated:check   # TYPO3-14-Deprecation-Check
-composer qa                 # Aggregat
-```
-
-## Häufige Fallstricke
-
-- **`localPath` muss schreibbar sein**. Bei read-only `/app` muss `emptyDir`/`tmpfs`
-  den Cache-Pfad bedienen.
-- **Identisches Container-Image für alle Pods**. Andere PHP-/igbinary-Versionen
-  führen zu unterschiedlichen Hashes → permanente Blob-Misses.
-- **`metadataCacheIdentifier`** muss vor dem Booten des `pages`-Caches registriert
-  sein. TYPO3 lädt `cacheConfigurations` der Reihe nach in der Array-Reihenfolge —
-  also `cluster_meta` vor `pages` definieren.
-- **Classic-Mode-TYPO3 wird nicht unterstützt** — Composer-Mode-only, kein `ext_emconf.php`.
-
-## Cluster-Konsistenz: was passiert beim Cache-Clear?
-
-> Häufig gestellte Frage: „Wenn ein Editor im TYPO3-Backend auf *Clear all caches*
-> klickt, wie wird sichergestellt, dass **alle** Pods das mitbekommen?"
-
-Antwort in einer Zeile: Der Pod, der den Klick verarbeitet, leert die zentrale
-Metadata. Alle anderen Pods fragen beim nächsten `get()` die zentrale Metadata —
-und sehen sofort, dass sie leer ist. **Keine Pod-zu-Pod-Synchronisation nötig**,
-weil die Metadata-Wahrheit nie auf einem Pod lebt.
-
-### Ablauf im Detail
+### Detailed flow
 
 ```
-Pod A: TYPO3 Backend „Clear all caches" / Editor speichert Seite /
-       `vendor/bin/typo3 cache:flush`
+Pod A: TYPO3 backend "Clear all caches" / editor saves page /
+       `bin/typo3 cache:flush`
    │
    ▼
-ClusterFileBackend::flush()              auf Pod A
+ClusterFileBackend::flush()                 on pod A
    │
-   ▼  delegiert an Metadata-Cache-Frontend (z. B. `cluster_meta`)
+   ▼  delegates to metadata cache frontend (e.g. cluster_meta)
 $metadataCache->flush()
    │
-   ▼  TYPO3-Cache-API ruft das konfigurierte Backend
+   ▼  TYPO3 cache API calls the configured backend
 KeyValueBackend / DatabaseBackend / MemcachedBackend → flush()
    │
-   ▼  passiert SERVER-SEITIG (Redis `FLUSHDB`, SQL `TRUNCATE`, Memcached `flush_all`)
-Alle Pods sehen sofort leere Metadata
+   ▼  happens SERVER-SIDE (Redis FLUSHDB, SQL TRUNCATE, Memcached flush_all)
+All pods see the empty metadata immediately
 ```
 
-Beim nächsten `get(id)` auf **irgendeinem** Pod:
+On the next `get(id)` on **any** pod:
 
 ```php
-$metadata = $this->metadataCache->get($identifier);   // → null (cache geflushed)
+$metadata = $this->metadataCache->get($identifier);   // → null (cache flushed)
 if ($metadata === null) {
     // cache_miss_total{reason=no-metadata}++
-    return null;   // ← Pod fragt NICHT seinen lokalen FS
+    return null;   // ← pod does NOT consult its local FS
 }
 ```
 
-Das ist der Kernunterschied zum TYPO3-Core-FileBackend: wir prüfen **niemals**
-`file_exists()` als Cache-Gültigkeits-Entscheider. Der lokale FS ist Materialisierung,
-nicht Wahrheitsquelle.
+### Verified by test suite
 
-### Was passiert mit der lokalen Datei nach `flush()`?
+`Tests/Unit/Deployment/CrossPodFlushTest.php` contains five tests proving:
 
-**Nichts.** Sie bleibt liegen. Aber sie wird:
+- `flush()` propagates to pod B immediately, no sync.
+- `flushByTag()` invalidates only matching entries.
+- Local file survives flush as harmless orphan.
+- Re-write after flush re-establishes consistency.
+- Flush works for arbitrary numbers of pods (no scaling assumption).
 
-- nicht ausgeliefert, weil `ReadCacheEntry` zuerst die Metadata prüft und ohne
-  Match sofort `null` zurückgibt;
-- nicht über `file_exists()` „entdeckt", weil niemand außerhalb von
-  `ReadCacheEntry::execute` den Pfad jemals direkt liest;
-- bei nächstem `set()` mit identischem Inhalt **idempotent überschrieben**
-  (derselbe Hash → derselbe Filename);
-- bei Pod-Restart durch das `emptyDir`-Reset entfernt;
-- oder bei einem GC-Lauf bereinigt.
+## Complexity — why it's faster in a cluster
 
-Diese „orphan files" sind harmlos und kosten höchstens Disk-Space, nie Korrektheit.
-
-### Was ist mit `flushByTag()`?
-
-```
-Editor speichert Seite 42 → TYPO3 ruft cache->flushByTag('pageId_42') auf Pod A
-   │
-   ▼
-ClusterFileBackend::flushByTag('pageId_42')
-   │
-   ▼  delegiert an Metadata-Cache via TaggableBackendInterface
-$metadataCache->flushByTag('pageId_42')
-   │
-   ▼  Backend-natives Tag-Lookup (z. B. Redis Tag-Index)
-DELETE alle Metadata-Records mit Tag pageId_42
-```
-
-Alle Pods sehen das beim nächsten `get('page_42_lang_0')` (Cache-Miss).
-Untagged Einträge oder mit anderem Tag bleiben gültig.
-
-### Wenn der Inhalt sich ändert (= anderer Hash)
-
-Wenn der Caller (TYPO3-Cache-Frontend) nach dem Flush **anderen** Inhalt produziert
-(z. B. weil die Seite editiert wurde), wird ein neuer Hash berechnet → neue Metadata
-→ neuer lokaler Filename. Die alte lokale Datei wird nicht mehr referenziert
-(siehe oben).
-
-Wenn der Caller **denselben** Inhalt deterministisch erneut produziert (z. B. weil
-sich nur ein Cache-Lookup-Pfad refresht), ist der Hash identisch — die existierende
-lokale Datei wird wiederverwendet (write ist idempotent). **Das ist gewollt: spart
-Re-Materialisierung in Edge-Cases wie HPA-Scale-Up oder Pod-Restart.**
-
-### Verifiziert durch Test-Suite
-
-`Tests/Unit/Deployment/CrossPodFlushTest.php` enthält fünf Tests:
-
-| Test | Was beweist er? |
-|---|---|
-| `testFlushOnPodAIsImmediatelyVisibleOnPodB` | Globaler `flush()` propagiert in Pod B sofort, ohne Sync-Schritt. |
-| `testFlushByTagOnPodAInvalidatesOnlyMatchingEntriesOnPodB` | Tag-Flush invalidiert nur Matches; untagged Einträge bleiben. |
-| `testLocalFileSurvivesFlushButIsUnreachableWithoutMetadata` | Lokale Datei überlebt Flush, ist aber nicht mehr auslieferbar. |
-| `testWriteAfterFlushReestablishesConsistency` | Nach Flush + neuer Schreibvorgang: Cluster konsistent, Blob-Miss-Pfad funktioniert. |
-| `testFlushPropagatesToArbitraryNumberOfPods` | Funktioniert für 1, 2, 5, N Pods — keine Skalierungs-Annahme. |
-
-## Komplexität: warum es im Cluster schneller ist
-
-| Operation | TYPO3 Core FileBackend | ClusterFileBackend | Speedup-Quelle |
+| Operation | TYPO3 Core FileBackend | ClusterFileBackend | Speedup |
 |---|---|---|---|
-| `flushByTag` | **O(N_all)** — DirectoryIterator über alle Cache-Files, 2× `file_get_contents` pro Datei | **O(M_matching)** — Backend liest Tag-Index direkt | Andere Komplexitätsklasse + Tag-Indizes |
-| `findIdentifiersByTag` | **O(N_all)** wie oben | **O(M_matching)** | dito |
-| `collectGarbage` | **O(N_all) per Pod** | **O(0)** active work (Redis TTL-Auto-Expire) bzw. **O(N_expired) server-side** (DB) | Backend-native + cluster-once |
-| `flush` | O(N_all) per Pod | O(N_all) **einmal server-side** | Konstanten 100–1000× kleiner; kein Pod-Faktor |
+| `flushByTag` | **O(N_all)** — DirectoryIterator over every cache file, 2× `file_get_contents` per file | **O(M_matching)** — backend reads tag index directly | Different complexity class + tag indexes |
+| `findIdentifiersByTag` | O(N_all) | O(M_matching) | same |
+| `collectGarbage` | O(N_all) per pod | **O(0)** active (Redis TTL auto-expire) or O(N_expired) server-side (DB) | Backend-native + cluster-once |
+| `flush` | O(N_all) per pod | O(N_all) **once server-side** | Constants ~100–1000× smaller; no pod factor |
 
-**Konkretes Beispiel**: 10.000 Cache-Einträge, davon 100 mit Tag `site_1`,
-5 Pods im Cluster.
+**Concrete example**: 10,000 cache entries, 100 tagged `site_1`, 5 pods.
 
-| | File-Reads | unlink-Calls | Round-Trips |
+| | File reads | unlink calls | Round-trips |
 |---|---|---|---|
-| Core FileBackend (`flushByTag('site_1')`) | **20.000** (2 × 10.000) | 100 | ~20.100 lokale FS-IO **pro Pod** |
-| Unser Backend (Redis) | **0** | 0 | ~2 (SMEMBERS + Pipeline-DEL) **einmal cluster-weit** |
+| Core FileBackend (`flushByTag('site_1')`) | **20,000** | 100 | ~20,100 local FS I/O **per pod** |
+| ClusterFileBackend (Redis) | 0 | 0 | ~2 (SMEMBERS + pipeline DEL) **once cluster-wide** |
 
-Mehr als „kleineres n": **andere Komplexitätsklasse**, **Backend-native Algorithmen**
-und **kein Pod-Multiplikator**.
+It's not just "smaller N": **different complexity class**, **backend-native
+algorithms**, and **no pod multiplier**.
 
-## Lizenz
+## Development
 
-GPL-2.0-or-later — siehe `LICENSES/GPL-2.0-or-later.txt`.
+```bash
+composer install
+composer test               # Unit tests
+composer test:contract      # Contract tests
+composer test:functional    # Functional (requires TYPO3 testing framework bootstrap)
+composer phpstan            # PHPStan level 8 + bleeding edge
+composer deptrac            # DDD layer enforcement
+composer cs:check           # @Symfony + @PER-CS3x0 + @PHP85Migration via moselwal/dev
+composer deprecated:check   # TYPO3 14 deprecation static check
+composer reuse:check        # SPDX header verification
+composer qa                 # Aggregate of all checks above
+```
+
+## Common pitfalls
+
+- **`localPath` must be writable.** With a read-only `/app` image, mount
+  `emptyDir` / `tmpfs` at that path.
+- **Identical container image across all pods.** Different PHP or igbinary
+  versions produce divergent hashes → permanent blob-misses. Major versions
+  are enough — patch versions are not in the hash (since v1.0.1).
+- **`metadataCacheIdentifier`** must be registered before any cache that
+  uses `ClusterFileBackend`. TYPO3 loads `cacheConfigurations` in array
+  insertion order — define `cluster_meta` first.
+- **Composer mode only.** No `ext_emconf.php`, no Classic mode.
+
+## License
+
+MIT — see `LICENSES/MIT.txt`.
