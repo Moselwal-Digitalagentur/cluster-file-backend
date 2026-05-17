@@ -11,7 +11,7 @@ atomar geschriebene Dateien materialisiert.
 - **Extension-Key**: `cluster_file_backend`
 - **Namespace**: `Moselwal\Typo3ClusterCache\`
 - **TYPO3**: 14.x (Composer-Mode-only — kein `ext_emconf.php`)
-- **PHP**: 8.3+
+- **PHP**: 8.5+
 - **Lizenz**: GPL-2.0-or-later
 
 ## Architektur in einer Zeile
@@ -167,6 +167,126 @@ composer qa                 # Aggregat
   sein. TYPO3 lädt `cacheConfigurations` der Reihe nach in der Array-Reihenfolge —
   also `cluster_meta` vor `pages` definieren.
 - **Classic-Mode-TYPO3 wird nicht unterstützt** — Composer-Mode-only, kein `ext_emconf.php`.
+
+## Cluster-Konsistenz: was passiert beim Cache-Clear?
+
+> Häufig gestellte Frage: „Wenn ein Editor im TYPO3-Backend auf *Clear all caches*
+> klickt, wie wird sichergestellt, dass **alle** Pods das mitbekommen?"
+
+Antwort in einer Zeile: Der Pod, der den Klick verarbeitet, leert die zentrale
+Metadata. Alle anderen Pods fragen beim nächsten `get()` die zentrale Metadata —
+und sehen sofort, dass sie leer ist. **Keine Pod-zu-Pod-Synchronisation nötig**,
+weil die Metadata-Wahrheit nie auf einem Pod lebt.
+
+### Ablauf im Detail
+
+```
+Pod A: TYPO3 Backend „Clear all caches" / Editor speichert Seite /
+       `vendor/bin/typo3 cache:flush`
+   │
+   ▼
+ClusterFileBackend::flush()              auf Pod A
+   │
+   ▼  delegiert an Metadata-Cache-Frontend (z. B. `cluster_meta`)
+$metadataCache->flush()
+   │
+   ▼  TYPO3-Cache-API ruft das konfigurierte Backend
+KeyValueBackend / DatabaseBackend / MemcachedBackend → flush()
+   │
+   ▼  passiert SERVER-SEITIG (Redis `FLUSHDB`, SQL `TRUNCATE`, Memcached `flush_all`)
+Alle Pods sehen sofort leere Metadata
+```
+
+Beim nächsten `get(id)` auf **irgendeinem** Pod:
+
+```php
+$metadata = $this->metadataCache->get($identifier);   // → null (cache geflushed)
+if ($metadata === null) {
+    // cache_miss_total{reason=no-metadata}++
+    return null;   // ← Pod fragt NICHT seinen lokalen FS
+}
+```
+
+Das ist der Kernunterschied zum TYPO3-Core-FileBackend: wir prüfen **niemals**
+`file_exists()` als Cache-Gültigkeits-Entscheider. Der lokale FS ist Materialisierung,
+nicht Wahrheitsquelle.
+
+### Was passiert mit der lokalen Datei nach `flush()`?
+
+**Nichts.** Sie bleibt liegen. Aber sie wird:
+
+- nicht ausgeliefert, weil `ReadCacheEntry` zuerst die Metadata prüft und ohne
+  Match sofort `null` zurückgibt;
+- nicht über `file_exists()` „entdeckt", weil niemand außerhalb von
+  `ReadCacheEntry::execute` den Pfad jemals direkt liest;
+- bei nächstem `set()` mit identischem Inhalt **idempotent überschrieben**
+  (derselbe Hash → derselbe Filename);
+- bei Pod-Restart durch das `emptyDir`-Reset entfernt;
+- oder bei einem GC-Lauf bereinigt.
+
+Diese „orphan files" sind harmlos und kosten höchstens Disk-Space, nie Korrektheit.
+
+### Was ist mit `flushByTag()`?
+
+```
+Editor speichert Seite 42 → TYPO3 ruft cache->flushByTag('pageId_42') auf Pod A
+   │
+   ▼
+ClusterFileBackend::flushByTag('pageId_42')
+   │
+   ▼  delegiert an Metadata-Cache via TaggableBackendInterface
+$metadataCache->flushByTag('pageId_42')
+   │
+   ▼  Backend-natives Tag-Lookup (z. B. Redis Tag-Index)
+DELETE alle Metadata-Records mit Tag pageId_42
+```
+
+Alle Pods sehen das beim nächsten `get('page_42_lang_0')` (Cache-Miss).
+Untagged Einträge oder mit anderem Tag bleiben gültig.
+
+### Wenn der Inhalt sich ändert (= anderer Hash)
+
+Wenn der Caller (TYPO3-Cache-Frontend) nach dem Flush **anderen** Inhalt produziert
+(z. B. weil die Seite editiert wurde), wird ein neuer Hash berechnet → neue Metadata
+→ neuer lokaler Filename. Die alte lokale Datei wird nicht mehr referenziert
+(siehe oben).
+
+Wenn der Caller **denselben** Inhalt deterministisch erneut produziert (z. B. weil
+sich nur ein Cache-Lookup-Pfad refresht), ist der Hash identisch — die existierende
+lokale Datei wird wiederverwendet (write ist idempotent). **Das ist gewollt: spart
+Re-Materialisierung in Edge-Cases wie HPA-Scale-Up oder Pod-Restart.**
+
+### Verifiziert durch Test-Suite
+
+`Tests/Unit/Deployment/CrossPodFlushTest.php` enthält fünf Tests:
+
+| Test | Was beweist er? |
+|---|---|
+| `testFlushOnPodAIsImmediatelyVisibleOnPodB` | Globaler `flush()` propagiert in Pod B sofort, ohne Sync-Schritt. |
+| `testFlushByTagOnPodAInvalidatesOnlyMatchingEntriesOnPodB` | Tag-Flush invalidiert nur Matches; untagged Einträge bleiben. |
+| `testLocalFileSurvivesFlushButIsUnreachableWithoutMetadata` | Lokale Datei überlebt Flush, ist aber nicht mehr auslieferbar. |
+| `testWriteAfterFlushReestablishesConsistency` | Nach Flush + neuer Schreibvorgang: Cluster konsistent, Blob-Miss-Pfad funktioniert. |
+| `testFlushPropagatesToArbitraryNumberOfPods` | Funktioniert für 1, 2, 5, N Pods — keine Skalierungs-Annahme. |
+
+## Komplexität: warum es im Cluster schneller ist
+
+| Operation | TYPO3 Core FileBackend | ClusterFileBackend | Speedup-Quelle |
+|---|---|---|---|
+| `flushByTag` | **O(N_all)** — DirectoryIterator über alle Cache-Files, 2× `file_get_contents` pro Datei | **O(M_matching)** — Backend liest Tag-Index direkt | Andere Komplexitätsklasse + Tag-Indizes |
+| `findIdentifiersByTag` | **O(N_all)** wie oben | **O(M_matching)** | dito |
+| `collectGarbage` | **O(N_all) per Pod** | **O(0)** active work (Redis TTL-Auto-Expire) bzw. **O(N_expired) server-side** (DB) | Backend-native + cluster-once |
+| `flush` | O(N_all) per Pod | O(N_all) **einmal server-side** | Konstanten 100–1000× kleiner; kein Pod-Faktor |
+
+**Konkretes Beispiel**: 10.000 Cache-Einträge, davon 100 mit Tag `site_1`,
+5 Pods im Cluster.
+
+| | File-Reads | unlink-Calls | Round-Trips |
+|---|---|---|---|
+| Core FileBackend (`flushByTag('site_1')`) | **20.000** (2 × 10.000) | 100 | ~20.100 lokale FS-IO **pro Pod** |
+| Unser Backend (Redis) | **0** | 0 | ~2 (SMEMBERS + Pipeline-DEL) **einmal cluster-weit** |
+
+Mehr als „kleineres n": **andere Komplexitätsklasse**, **Backend-native Algorithmen**
+und **kein Pod-Multiplikator**.
 
 ## Lizenz
 
