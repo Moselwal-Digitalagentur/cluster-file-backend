@@ -1,0 +1,69 @@
+deptrac:
+    paths:
+        - ./Classes
+    exclude_files:
+        - '#.*Tests/.*#'
+    layers:
+        - name: Domain
+          collectors:
+              - type: directory
+                value: Classes/Domain/.*
+        - name: Application
+          collectors:
+              - type: directory
+                value: Classes/Application/.*
+        - name: Infrastructure
+          collectors:
+              - type: directory
+                value: Classes/Infrastructure/.*
+        - name: Presentation
+          collectors:
+              - type: directory
+                value: Classes/Presentation/.*
+        - name: TYPO3Framework
+          collectors:
+              - type: classLike
+                value: ^TYPO3\\CMS\\.*
+        - name: SymfonyFramework
+          collectors:
+              - type: classLike
+                value: ^Symfony\\.*
+        - name: PsrContract
+          collectors:
+              - type: classLike
+                value: ^Psr\\.*
+        - name: PhpCore
+          collectors:
+              - type: classLike
+                value: ^[A-Z][A-Za-z0-9_]*$
+        - name: Vendor
+          collectors:
+              - type: classLike
+                value: ^(?!Moselwal\\Typo3ClusterCache\\|TYPO3\\CMS\\|Symfony\\|Psr\\|Redis$|JsonException$).*\\.*
+    ruleset:
+        Domain:
+            - PhpCore
+        Application:
+            - Domain
+            - PsrContract
+            - PhpCore
+        Infrastructure:
+            - Domain
+            - Application
+            - TYPO3Framework
+            - SymfonyFramework
+            - PsrContract
+            - PhpCore
+            - Vendor
+        Presentation:
+            - Domain
+            - Application
+            - TYPO3Framework
+            - SymfonyFramework
+            - PsrContract
+            - PhpCore
+    formatters:
+        graphviz:
+            hidden_layers:
+                - Vendor
+                - PsrContract

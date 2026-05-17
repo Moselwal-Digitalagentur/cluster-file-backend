@@ -1,0 +1,115 @@
+<?php
+
+// SPDX-FileCopyrightText: 2026 Moselwal GmbH
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+declare(strict_types=1);
+
+namespace Moselwal\Typo3ClusterCache\Tests\Unit\EdgeCases;
+
+use Moselwal\Typo3ClusterCache\Application\Hash\ComputePayloadHash;
+use Moselwal\Typo3ClusterCache\Application\Invalidate\FlushByTag;
+use Moselwal\Typo3ClusterCache\Application\Read\ReadCacheEntry;
+use Moselwal\Typo3ClusterCache\Application\Write\WriteCacheEntry;
+use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
+use Moselwal\Typo3ClusterCache\Domain\Model\BackendVersion;
+use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
+use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
+use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
+use Moselwal\Typo3ClusterCache\Domain\Model\SerializerName;
+use Moselwal\Typo3ClusterCache\Domain\Model\TagSet;
+use Moselwal\Typo3ClusterCache\Infrastructure\Compression\NullCompressor;
+use Moselwal\Typo3ClusterCache\Tests\Support\FakeClock;
+use Moselwal\Typo3ClusterCache\Tests\Support\FakeMetadataCache;
+use Moselwal\Typo3ClusterCache\Tests\Support\FakeMetrics;
+use Moselwal\Typo3ClusterCache\Tests\Support\InMemoryLocalPayloadStore;
+use PHPUnit\Framework\TestCase;
+
+/**
+ * Spec Edge Case T164: Tag-Invalidierung während laufender Schreibvorgänge.
+ * In beiden möglichen Reihenfolgen muss der Endzustand deterministisch sein —
+ * niemals "valid mit bereits invalidiertem Tag".
+ */
+final class FlushDuringWriteRaceTest extends TestCase
+{
+    private CacheNamespace $namespace;
+    private FakeMetadataCache $cache;
+    private InMemoryLocalPayloadStore $local;
+    private WriteCacheEntry $writer;
+    private ReadCacheEntry $reader;
+    private FlushByTag $flusher;
+
+    protected function setUp(): void
+    {
+        $this->namespace = new CacheNamespace(EnvironmentName::Testing, 'race', 'pages');
+        $this->cache = new FakeMetadataCache();
+        $this->local = new InMemoryLocalPayloadStore();
+        $clock = new FakeClock(1_700_000_000);
+        $metrics = new FakeMetrics();
+        $compressor = new NullCompressor();
+        $this->writer = new WriteCacheEntry(
+            metadataCache: $this->cache,
+            localStore: $this->local,
+            compressor: $compressor,
+            clock: $clock,
+            metrics: $metrics,
+            hasher: new ComputePayloadHash(),
+            serializer: SerializerName::phpNative(),
+            compression: CompressionName::none(),
+            backendVersion: new BackendVersion(1),
+        );
+        $this->reader = new ReadCacheEntry(
+            metadataCache: $this->cache,
+            localStore: $this->local,
+            compressor: $compressor,
+            clock: $clock,
+            metrics: $metrics,
+        );
+        $this->flusher = new FlushByTag($this->cache, $metrics);
+    }
+
+    public function testSetThenFlushByTagResultsInInvalidEntry(): void
+    {
+        $id = new CacheIdentifier('race1');
+        $this->writer->execute($this->namespace, $id, 'p', new TagSet(['tag_x']), 3600);
+        $this->flusher->execute($this->namespace, 'tag_x');
+
+        self::assertNull($this->reader->execute($this->namespace, $id));
+    }
+
+    public function testFlushByTagThenSetResultsInValidEntry(): void
+    {
+        // Tag wird invalidiert, BEVOR es überhaupt einen Eintrag gibt
+        $this->flusher->execute($this->namespace, 'tag_x');
+
+        $id = new CacheIdentifier('race2');
+        $this->writer->execute($this->namespace, $id, 'p', new TagSet(['tag_x']), 3600);
+
+        // Set nach Flush → Eintrag ist neu und gültig
+        self::assertSame('p', $this->reader->execute($this->namespace, $id));
+    }
+
+    public function testInterleavedSetFlushSetEndsInValidEntry(): void
+    {
+        $id = new CacheIdentifier('race3');
+        $this->writer->execute($this->namespace, $id, 'v1', new TagSet(['tag_x']), 3600);
+        $this->flusher->execute($this->namespace, 'tag_x');
+        $this->writer->execute($this->namespace, $id, 'v2', new TagSet(['tag_x']), 3600);
+
+        // Letztes Set gewinnt — Read liefert v2
+        self::assertSame('v2', $this->reader->execute($this->namespace, $id));
+    }
+
+    public function testEntryWithDifferentTagSurvivesFlush(): void
+    {
+        $id1 = new CacheIdentifier('race4a');
+        $id2 = new CacheIdentifier('race4b');
+        $this->writer->execute($this->namespace, $id1, 'a', new TagSet(['tag_x']), 3600);
+        $this->writer->execute($this->namespace, $id2, 'b', new TagSet(['tag_y']), 3600);
+
+        $this->flusher->execute($this->namespace, 'tag_x');
+
+        self::assertNull($this->reader->execute($this->namespace, $id1));
+        self::assertSame('b', $this->reader->execute($this->namespace, $id2));
+    }
+}

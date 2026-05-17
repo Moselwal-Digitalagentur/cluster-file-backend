@@ -1,0 +1,56 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://moselwal.io/schemas/cluster-file-backend/options.v1.json",
+    "title": "ClusterFileBackend Options",
+    "type": "object",
+    "required": ["localPath", "namespace", "metadataCacheIdentifier"],
+    "additionalProperties": false,
+    "properties": {
+        "localPath": {
+            "type": "string",
+            "pattern": "^/.*",
+            "description": "Absoluter Pfad zum pod-lokalen Payload-Store-Verzeichnis."
+        },
+        "metadataCacheIdentifier": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_]{1,64}$",
+            "description": "TYPO3-Cache-Frontend-Identifier, der die zentralen Metadaten speichert. Der Anwender konfiguriert dieses Frontend selbst und wählt das Backend (z. B. KeyValueBackend, Typo3DatabaseBackend, etc.)."
+        },
+        "namespace": {
+            "type": "object",
+            "required": ["environment", "instance"],
+            "additionalProperties": false,
+            "properties": {
+                "environment": {
+                    "type": "string",
+                    "enum": ["prod", "staging", "testing", "development"]
+                },
+                "instance": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9-]{1,64}$"
+                }
+            }
+        },
+        "compression": {
+            "type": "string",
+            "enum": ["zstd", "gzip", "none"],
+            "default": "zstd"
+        },
+        "serializer": {
+            "type": "string",
+            "enum": ["igbinary", "php"],
+            "default": "igbinary"
+        },
+        "defaultLifetimeSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 3600
+        },
+        "maxPayloadBytes": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 1073741824,
+            "default": 10485760
+        }
+    }
+}

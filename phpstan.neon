@@ -1,0 +1,20 @@
+# Diese Konfiguration nutzt die phpstan-Extensions aus moselwal/dev:
+#   - phpstan/phpstan-strict-rules
+#   - phpstan/phpstan-phpunit
+#   - phpstan/phpstan-deprecation-rules
+# Die werden via phpstan/extension-installer beim `composer install` automatisch
+# eingebunden, sobald moselwal/dev als require-dev installiert ist.
+
+includes:
+    - phar://vendor/phpstan/phpstan/phpstan.phar/conf/bleedingEdge.neon
+
+parameters:
+    level: 8
+    paths:
+        - Classes
+        - Tests
+    excludePaths:
+        - Tests/Functional/Bootstrap.php (?)
+    treatPhpDocTypesAsCertain: false
+    reportUnmatchedIgnoredErrors: true
+    tmpDir: .phpstan.cache

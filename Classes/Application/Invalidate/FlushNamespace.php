@@ -1,0 +1,30 @@
+<?php
+
+// SPDX-FileCopyrightText: 2026 Moselwal GmbH
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+declare(strict_types=1);
+
+namespace Moselwal\Typo3ClusterCache\Application\Invalidate;
+
+use Moselwal\Typo3ClusterCache\Domain\Contract\MetadataCachePort;
+use Moselwal\Typo3ClusterCache\Domain\Contract\MetricsPort;
+use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
+
+final readonly class FlushNamespace
+{
+    public function __construct(
+        private MetadataCachePort $metadataCache,
+        private MetricsPort $metrics,
+    ) {}
+
+    public function execute(CacheNamespace $namespace): void
+    {
+        $this->metadataCache->flush();
+        $this->metrics->counter('cache_flush_total', [
+            'cacheName' => $namespace->cacheName,
+            'namespace' => $namespace->toKvKeyPrefix(),
+            'kind' => 'full',
+        ]);
+    }
+}

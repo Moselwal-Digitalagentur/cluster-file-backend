@@ -1,0 +1,83 @@
+{
+    "name": "moselwal/cluster-file-backend",
+    "type": "typo3-cms-extension",
+    "description": "TYPO3 14 Cache-Backend für Kubernetes-Cluster — kein Shared Filesystem, zentrale Cache-Gültigkeit, deterministische Re-Materialisierung",
+    "license": "GPL-2.0-or-later",
+    "keywords": ["typo3", "cache", "kubernetes", "cluster", "stateless"],
+    "authors": [
+        {
+            "name": "Moselwal",
+            "homepage": "https://moselwal.io"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../dev",
+            "options": { "symlink": true }
+        }
+    ],
+    "require": {
+        "php": "^8.5",
+        "ext-hash": "*",
+        "typo3/cms-core": "^14.3",
+        "justinrainbow/json-schema": "^5.0"
+    },
+    "require-dev": {
+        "deptrac/deptrac": "^4.6",
+        "moselwal/dev": "@dev",
+        "phpunit/phpunit": "^11.0",
+        "typo3/testing-framework": "^9.0"
+    },
+    "suggest": {
+        "ext-igbinary": "Schnellerer Default-Serializer (empfohlen)",
+        "ext-zstd": "Schnellere Default-Kompression (empfohlen)",
+        "moselwal/keyvalue-store": "Liefert ein TYPO3-Cache-Backend (`KeyValueBackend`) für Redis/Valkey, das als Metadata-Cache konfiguriert werden kann."
+    },
+    "autoload": {
+        "psr-4": {
+            "Moselwal\\Typo3ClusterCache\\": "Classes/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Moselwal\\Typo3ClusterCache\\Tests\\": "Tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": true,
+            "sbuerk/typo3-cmscomposerinstallers-testingframework-bridge": true,
+            "typo3/class-alias-loader": true,
+            "typo3/cms-composer-installers": true
+        }
+    },
+    "extra": {
+        "typo3/cms": {
+            "Package": {
+                "providesPackages": {}
+            },
+            "extension-key": "cluster_file_backend"
+        }
+    },
+    "scripts": {
+        "test": "phpunit --testsuite=Unit",
+        "test:contract": "phpunit --testsuite=Contract",
+        "test:functional": "phpunit --testsuite=Functional",
+        "phpstan": "phpstan analyse --memory-limit=512M",
+        "deptrac": "deptrac analyse --no-progress",
+        "cs:check": "php-cs-fixer fix --dry-run --diff",
+        "cs:fix": "php-cs-fixer fix",
+        "deprecated:check": "bash Build/check-deprecated.sh",
+        "reuse:check": "bash Build/check-reuse-headers.sh",
+        "qa": [
+            "@cs:check",
+            "@phpstan",
+            "@deptrac",
+            "@deprecated:check",
+            "@reuse:check",
+            "@test"
+        ]
+    }
+}

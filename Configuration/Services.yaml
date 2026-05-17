@@ -1,0 +1,37 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+    public: false
+
+  Moselwal\Typo3ClusterCache\:
+    resource: '../Classes/*'
+    exclude:
+      - '../Classes/Domain/Model/*'
+      - '../Classes/Domain/Enum/*'
+      - '../Classes/Domain/Exception/*'
+
+  _instanceof:
+    Moselwal\Typo3ClusterCache\Domain\Contract\SerializerPort:
+      tags: ['cfb.serializer']
+    Moselwal\Typo3ClusterCache\Domain\Contract\CompressorPort:
+      tags: ['cfb.compressor']
+    Moselwal\Typo3ClusterCache\Domain\Contract\ClockPort:
+      tags: ['cfb.clock']
+    Moselwal\Typo3ClusterCache\Domain\Contract\MetricsPort:
+      tags: ['cfb.metrics']
+
+  # Default-Bindings
+  Moselwal\Typo3ClusterCache\Domain\Contract\ClockPort:
+    alias: Moselwal\Typo3ClusterCache\Infrastructure\Time\SystemClock
+
+  Moselwal\Typo3ClusterCache\Domain\Contract\MetricsPort:
+    alias: Moselwal\Typo3ClusterCache\Infrastructure\Observability\PrometheusMetrics
+
+  # Presentation
+  Moselwal\Typo3ClusterCache\Presentation\Command\GarbageCollectCommand:
+    public: true
+    tags:
+      - name: 'console.command'
+        command: 'clusterfilebackend:gc'
+        description: 'Garbage-Collection für ClusterFileBackend-Metadaten'

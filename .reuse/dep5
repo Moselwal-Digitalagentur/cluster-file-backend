@@ -1,0 +1,16 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: cluster-file-backend
+Upstream-Contact: Moselwal <support@moselwal.io>
+Source: https://github.com/moselwal/cluster-file-backend
+
+Files: *
+Copyright: 2026 Moselwal GmbH
+License: GPL-2.0-or-later
+
+Files: .specify/* .claude/*
+Copyright: 2026 Moselwal GmbH
+License: GPL-2.0-or-later
+
+Files: composer.json composer.lock
+Copyright: 2026 Moselwal GmbH
+License: GPL-2.0-or-later
