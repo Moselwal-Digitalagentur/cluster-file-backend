@@ -4,6 +4,40 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [2.0.1] - 2026-05-21
+
+### Removed
+
+- **`Build/`-Verzeichnis komplett entfernt** (inkl. der drei
+  Bash-Scripts und der Deprecation-Symbol-Liste). Beide Checks waren
+  redundant:
+  - `Build/check-reuse-headers.sh` → ersetzt durch
+    `fsfe/reuse:latest` Docker-Image im CI (`reuse-lint` Job).
+  - `Build/check-deprecated.sh` + `Build/deprecated-typo3-14.txt` →
+    obsolet, seit `phpstan/phpstan-deprecation-rules` (v1.3.1) jeden
+    deprecated-Symbol-Aufruf zur QA-Zeit flaggt.
+- **Composer-Scripts `deprecated:check` und `reuse:check`** aus
+  `composer.json` entfernt; `composer qa` ruft sie nicht mehr auf.
+- **`.gitignore`-Negation `!/Build/`** entfernt — wird nicht mehr
+  benötigt, da kein `Build/` mehr da ist.
+
+### Changed
+
+- **`.gitlab-ci.yml`**: `deprecated-check`- und `reuse-check`-Jobs
+  durch einen einzigen `reuse-lint`-Job ersetzt, der das offizielle
+  `fsfe/reuse:latest` Docker-Image nutzt. Deprecation-Enforcement
+  läuft über den `phpstan`-Job.
+- **README "Development"** dokumentiert jetzt die externen QA-Tools
+  (`fsfe/reuse lint` lokal via Docker, deprecation-rules über
+  `composer phpstan`).
+
+### Rationale
+
+Die lokalen Bash-Scripts duplizierten Funktionalität, die in
+`moselwal/dev` (REUSE via `fsfe/reuse` im pre-commit-Hook) bzw. via
+`phpstan-deprecation-rules` (deprecated-symbols) bereits sauber
+zentralisiert ist. Weniger maintenance burden, single source of truth.
+
 ## [2.0.0] - 2026-05-21
 
 ### Breaking changes
@@ -439,6 +473,7 @@ Folgende Checks lieferten keine Treffer:
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[2.0.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v2.0.0...v2.0.1
 [2.0.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.2...v2.0.0
 [1.3.2]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.1...v1.3.2
 [1.3.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.0...v1.3.1

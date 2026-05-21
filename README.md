@@ -305,13 +305,18 @@ It's not just "smaller *n*": **different complexity class**,
 ```bash
 composer install
 composer test               # Unit tests
-composer phpstan            # PHPStan level 8 + bleeding edge
+composer phpstan            # PHPStan level 8 + bleeding edge + deprecation rules
 composer deptrac            # DDD layer enforcement
 composer cs:check           # @Symfony + @PER-CS3x0 + @PHP85Migration via moselwal/dev
-composer deprecated:check   # TYPO3 14 deprecation static check
-composer reuse:check        # SPDX header verification
 composer qa                 # Aggregate of all checks above
 ```
+
+REUSE/SPDX header conformance is checked in CI via the official
+`fsfe/reuse:latest` Docker image (see `.gitlab-ci.yml`); for local
+verification run `docker run --rm -v "$(pwd):/data" fsfe/reuse lint`.
+TYPO3 14 deprecation usage is detected by
+`phpstan/phpstan-deprecation-rules`, loaded automatically as part of
+`composer phpstan`.
 
 ## Rolling deploys with version skew
 

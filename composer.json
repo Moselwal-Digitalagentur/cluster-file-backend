@@ -68,14 +68,10 @@
         "deptrac": "deptrac analyse --no-progress",
         "cs:check": "php-cs-fixer fix --dry-run --diff",
         "cs:fix": "php-cs-fixer fix",
-        "deprecated:check": "bash Build/check-deprecated.sh",
-        "reuse:check": "bash Build/check-reuse-headers.sh",
         "qa": [
             "@cs:check",
             "@phpstan",
             "@deptrac",
-            "@deprecated:check",
-            "@reuse:check",
             "@test"
         ]
     }
