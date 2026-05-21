@@ -4,6 +4,53 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.2] - 2026-05-21
+
+### Security
+
+- **Composer-Dependencies upgedated** auf neueste Patch-Versionen.
+  `composer audit` davor: 8 Security-Advisories für Symfony-Pakete
+  (`symfony/cache`, `mailer`, `mime`, `routing`, `yaml`). Danach:
+  **0 advisories**. Betroffene Pakete sind transitive Abhängigkeiten
+  von TYPO3 14.3; das Update ist API-kompatibel (alle Pakete blieben
+  in derselben Major/Minor-Version).
+
+### Verified clean against TYPO3 14.3
+
+Vollständiger Scan gegen alle 174 Deprecation/Breaking-RST-Files der
+14.x-Reihe (14.0 + 14.1 + 14.2 + 14.3 + 14.3.x). Geprüfte Symbole, die
+wir verwenden:
+
+| Symbol | Status |
+|---|---|
+| `AbstractBackend`, `BackendInterface`, `TaggableBackendInterface` | strict-typed in 14.0 (Breaking-107315); unsere Signaturen exakt konform |
+| `FrontendInterface`, `VariableFrontend` | strict-typed; konform |
+| `CacheManager`, `CacheWarmupEvent` | unverändert |
+| `Cache\Exception`, `InvalidCacheException`, `InvalidDataException` | unverändert |
+| `FileBackend`, `SimpleFileBackend`, `Typo3DatabaseBackend` | nur in PHPDoc-Verweisen referenziert |
+| `GeneralUtility::makeInstance` | weiterhin offiziell, **nicht** deprecated |
+
+In 14.3 wurden mehrere `GeneralUtility`-Methoden deprecated
+(`isOnCurrentHost`, `sanitizeLocalUrl`, `locationHeaderUrl`,
+`getIndpEnv`, `resolveBackPath`) — wir nutzen davon **keine**.
+
+### Changed
+
+- **`Build/deprecated-typo3-14.txt`** erweitert um in 14.0 entfernte
+  Klassen und 14.3-`GeneralUtility`-Deprecations, sodass jeder
+  zukünftige Code-Pfad-Bug vom statischen CI-Check abgefangen wird.
+- Datei auf Englisch umgestellt (Konsistenz).
+
+### Fixed (versioning hygiene)
+
+- **`Build/` directory war nie versioniert.** Die `.gitignore`-Regel
+  `/build/` matchte auf case-insensitiven Filesystems (macOS HFS+/APFS)
+  auch das tracked `Build/`-Verzeichnis. Ergebnis: `composer qa` brach
+  auf jedem frischen Clone, weil `Build/check-deprecated.sh` und
+  `Build/check-reuse-headers.sh` fehlten. `.gitignore` hat jetzt eine
+  explizite `!/Build/` Negation und die drei Build-Dateien sind im Git
+  aufgenommen.
+
 ## [1.3.1] - 2026-05-21
 
 ### Fixed
@@ -246,6 +293,7 @@ Folgende Checks lieferten keine Treffer:
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[1.3.2]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.1...v1.3.2
 [1.3.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.0...v1.3.1
 [1.3.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.1...v1.3.0
 [1.2.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.0...v1.2.1
