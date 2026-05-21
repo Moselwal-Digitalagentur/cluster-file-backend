@@ -28,7 +28,7 @@ final class GarbageCollectCommandTest extends TestCase
         $runner = new RunGarbageCollection($this->cache, new FakeClock(1_700_000_000));
         $command = new GarbageCollectCommand($runner);
         $application = new Application();
-        $application->add($command);
+        $application->addCommand($command);
         $this->tester = new CommandTester($application->find('clusterfilebackend:gc'));
     }
 

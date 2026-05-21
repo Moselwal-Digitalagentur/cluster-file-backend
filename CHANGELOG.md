@@ -4,6 +4,38 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [1.3.1] - 2026-05-21
+
+### Fixed
+
+- **Deprecated Symfony API entfernt**: `Application::add()` (seit
+  Symfony 7.4 deprecated) durch `Application::addCommand()` in
+  `GarbageCollectCommandTest` ersetzt.
+
+### Changed
+
+- **`phpstan/phpstan-deprecation-rules ^2.0`** als `require-dev`
+  eingebunden. `moselwal/dev` deklariert die deprecation-rules selbst
+  nicht — die direkte Einbindung garantiert, dass jeder Konsumer einer
+  deprecated 3rd-party API (TYPO3, Symfony, etc.) zur QA-Zeit
+  geflaggt wird.
+- **composer.json `suggest`-Sektion** auf Englisch umgestellt
+  (Konsistenz mit dem restlichen Paket).
+- **phpstan.neon-Kommentar** korrigiert (war veraltet — listete
+  deprecation-rules als von moselwal/dev kommend, was nicht stimmte).
+
+### Verified clean
+
+Folgende Checks lieferten keine Treffer:
+- TYPO3 14 deprecated Symbole (`composer deprecated:check`).
+- `@deprecated`-Annotations im eigenen Code.
+- Legacy-Dateien (`ext_emconf.php`, `ext_localconf.php`, `.bak`,
+  `.DS_Store`).
+- Manuelle Deprecation-Mechanismen (`DeprecationLogger`,
+  `trigger_error(...E_USER_DEPRECATED)`).
+- `FreezableBackendInterface` (in TYPO3 14 entfernt) wird nicht
+  referenziert.
+
 ## [1.3.0] - 2026-05-17
 
 ### Fixed
@@ -214,6 +246,7 @@ die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[1.3.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.0...v1.3.1
 [1.3.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.1...v1.3.0
 [1.2.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.0...v1.2.1
 [1.2.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.1.0...v1.2.0

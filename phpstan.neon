@@ -1,9 +1,10 @@
-# Diese Konfiguration nutzt die phpstan-Extensions aus moselwal/dev:
-#   - phpstan/phpstan-strict-rules
-#   - phpstan/phpstan-phpunit
-#   - phpstan/phpstan-deprecation-rules
-# Die werden via phpstan/extension-installer beim `composer install` automatisch
-# eingebunden, sobald moselwal/dev als require-dev installiert ist.
+# PHPStan extensions enabled via phpstan/extension-installer:
+#   - phpstan/phpstan-strict-rules         (from moselwal/dev)
+#   - phpstan/phpstan-phpunit              (from moselwal/dev)
+#   - phpstan/phpstan-deprecation-rules    (this package require-dev)
+# phpstan/phpstan-deprecation-rules is pinned here directly because
+# moselwal/dev currently does not require it; we want every consumer of
+# deprecated 3rd-party APIs to be flagged at QA time.
 
 includes:
     - phar://vendor/phpstan/phpstan/phpstan.phar/conf/bleedingEdge.neon

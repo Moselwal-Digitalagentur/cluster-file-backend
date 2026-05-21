@@ -26,13 +26,14 @@
     "require-dev": {
         "deptrac/deptrac": "^4.6",
         "moselwal/dev": "@dev",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpunit/phpunit": "^11.0",
         "typo3/testing-framework": "^9.0"
     },
     "suggest": {
-        "ext-igbinary": "Schnellerer Default-Serializer (empfohlen)",
-        "ext-zstd": "Schnellere Default-Kompression (empfohlen)",
-        "moselwal/keyvalue-store": "Liefert ein TYPO3-Cache-Backend (`KeyValueBackend`) für Redis/Valkey, das als Metadata-Cache konfiguriert werden kann."
+        "ext-igbinary": "Faster default serializer (recommended)",
+        "ext-zstd": "Faster default compression (recommended)",
+        "moselwal/keyvalue-store": "Provides a TYPO3 cache backend (KeyValueBackend) for Redis/Valkey that can be configured as the metadata cache."
     },
     "autoload": {
         "psr-4": {
