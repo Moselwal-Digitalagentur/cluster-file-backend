@@ -4,6 +4,152 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [2.0.0] - 2026-05-21
+
+### Breaking changes
+
+- **`Generation` Value Object und das `generation`-Feld in `CacheMetadata`
+  wurden entfernt.** Das Konzept war ein Phantom — `Generation::next()`
+  wurde nie aufgerufen, jeder Write benutzte hardcoded
+  `new Generation(0)`. `CacheMetadata::isValid()` verlangt keinen
+  `Generation`-Parameter mehr. Legacy-Cache-Einträge mit `generation`-Feld
+  in der KV-Payload werden weiterhin gelesen — das Feld wird ignoriert.
+- **`CompressorPort::decompress` hat eine neue Pflicht-Signatur**:
+  `decompress(string $bytes, int $maxOutputBytes): string`. Compression-
+  Bomb-Schutz erforderlich. Alle drei Compressor-Implementierungen
+  (Gzip, Zstd, Null) wurden angepasst.
+- **`LocalPayloadStorePort::probe(): bool` ist neu** als Pflichtmethode.
+  Ermöglicht echte Write-Probes im Deployment-Warm-Up. Custom-Adapter
+  müssen die Methode implementieren.
+- **`Typo3MetadataCache::__construct` nimmt jetzt `CacheNamespace` als
+  zweites Argument**. Damit werden alle Metadata-Cache-Operationen pro
+  ClusterFileBackend-Instanz namespaced (siehe "Architektur" unten).
+- **`ReadCacheEntry::__construct` hat einen neuen
+  `int $maxDecompressedBytes`-Parameter** (Default 256 MiB) für
+  Compression-Bomb-Protection.
+- **TYPO3 cache-frontend Konvention für `lifetime`**: `null` =
+  default, `0` = forever, `> 0` = expire after N seconds, `< 0` =
+  invalid → fallback auf default. War vorher in v1.3.0 fix für `0`,
+  ist jetzt vollständig dokumentiert und durchgängig durchgesetzt.
+
+### Architektur
+
+- **B2: Tag-Namespacing zwischen ClusterFileBackend-Instanzen.**
+  Vorher teilten sich alle Cache-Instanzen, die dasselbe
+  `cluster_meta`-Backend nutzten, denselben Tag-Raum — `flushByTag` auf
+  `pages` konnte versehentlich Einträge in `pagesection` mit löschen.
+  `Typo3MetadataCache` prefixt jetzt jeden User-Tag mit
+  `__cfb_ns__{cacheName}__` und hängt einen zusätzlichen
+  `__cfb_ns__{cacheName}`-Tag an jeden Eintrag. `flush()` nutzt diesen
+  Namespace-Tag statt der globalen `flush()`-Operation, sodass sibling-
+  Caches sicher koexistieren.
+- **`ClusterFileBackend::setCache()` rebuildet jetzt alle
+  namespace-abhängigen Services** (writer, reader, etc.) — damit
+  greift das Tag-Namespacing erst, wenn TYPO3 das Backend an einen
+  konkreten Cache bindet.
+
+### Fixed
+
+- **B1: `WriteCacheEntry` propagierte `Lifetime::remainingSeconds()` an
+  den Metadata-Cache** statt der TTL-Semantik (`0` für unlimited).
+  Inkonsistenz zum Repair-Branch beseitigt; beide nutzen jetzt
+  `ttlForBackend()`.
+- **B3: `EmptyDirPayloadStore::write()` prüft jetzt vor `rename()`,
+  ob der Ziel-Pfad oder das Shard-Verzeichnis ein Symlink ist** —
+  Defense-in-Depth gegen Symlink-Race in fehlkonfigurierten
+  Deployments. Identifier-Pfade werden auch beim Read auf Symlinks
+  geprüft (treated as `PayloadIntegrityException`).
+- **B4: `public/index.php` (GPL-lizenziert) entfernt** aus dem
+  MIT-Repository (Versehen aus lokalem Test-Setup).
+- **B5: CI-Default-Image auf PHP 8.5** angehoben (war PHP 8.3, im
+  Konflikt mit `composer.json require: ^8.5`).
+- **`.gitignore`-Regel `/build/` matchte auch das tracked
+  `Build/`-Verzeichnis** auf macOS (case-insensitive HFS+/APFS). Fix
+  mit `!/Build/`-Negation; alle Build-Scripts sind jetzt versioniert.
+
+### Härtung (Security + Resilience)
+
+- **Compression-Bomb-Protection**: alle Decompress-Operationen
+  haben jetzt ein Output-Size-Limit, das vom `ClusterFileBackend`
+  über `maxPayloadBytes` durchgereicht wird (Default 256 MiB).
+- **`CacheMetadata::fromKvPayload` validiert Typen pro Feld** —
+  korrupte Metadata-Cache-Daten (z.B. `expiresAt` als String)
+  führen zu kontrollierter Exception statt unexpected behavior.
+- **Logger-Sanitization**: Cache-Identifier werden vor dem Logging
+  via sha256 gehasht (statt unredacted) — TYPO3 Cache-Identifier
+  enthalten oft Session-IDs / User-Hashes.
+- **Exception-Messages enthalten keine vollständigen Pfade mehr**;
+  Wrapped-Cache-Exception leakt keine inneren `getMessage()`.
+- **Broken-State-TTL Konstanten benannt** (`BROKEN_STATE_MIN_TTL_SECONDS`,
+  `BROKEN_STATE_MAX_TTL_SECONDS`); zweiter `set()`-Call jetzt in
+  try/catch eingeschlossen.
+- **Tag-Validation in `flushByTag`/`flushByTags`/`findIdentifiersByTag`**:
+  jeder Tag läuft durch `TagSet`-Pattern-Check (Defense-in-Depth gegen
+  Custom-Backend mit fehlendem Escaping).
+- **ENV-Variable-Länge in `BackendVersion::fromEnv` auf 512 chars
+  gekappt** (sehr minor CPU-DoS-Vektor bei Container-Escape).
+
+### Dead code removed
+
+- `Classes/Domain/Model/Generation.php`
+- `Classes/Infrastructure/Observability/NullMetrics.php` (Services.yaml
+  aliased ohnehin direkt auf `PrometheusMetrics`)
+- `Tests/Unit/Domain/Model/GenerationTest.php`
+- Leere `Tests/Contract` und `Tests/Functional` PHPUnit-Suites
+  (entsprechende `composer test:contract` / `test:functional`
+  Scripts entfernt)
+- `public/index.php` (GPL-Boilerplate aus lokalem Test-Setup)
+- `.phpstan.cache/` (versehentlich committed gewesen)
+
+### Added (Tests)
+
+- 14 neue Tests; Baseline jetzt **181 Tests / 315 Assertions / 7
+  skipped** (vorher 168/296/5):
+  - `CompressorRoundtripTest` — dedizierte Tests für Gzip/Zstd/Null
+    inkl. Compression-Bomb-Rejection.
+  - `RemoveCacheEntryTest` — bisher nur indirekt via Read/Write-Flow
+    abgedeckt.
+  - Boundary-Tests: `CacheIdentifier`-Länge=250, `TagSet`=64.
+  - `CacheNamespace::fromString` (neue Factory) inkl. Negativ-Cases.
+  - `CacheMetadata`-Type-Mismatch und Legacy-Generation-Toleranz.
+
+### Docs
+
+- README "Operational requirements" erweitert um:
+  - Required metadata-cache backend capabilities (Taggable-Tabelle).
+  - Deploy-time `IMAGE_TAG`-Konsistenz zwischen Worker- und Web-Containern.
+  - Y2K38-Limit für `Lifetime::unlimited()`.
+  - crc32-Kollisions-Schwelle in `BackendVersion::fromString`.
+- `docs/architecture.md`: Phantom-Klassen entfernt
+  (`SerializerPort`, `PayloadRebuilderPort`, `NullMetrics`,
+  `IgbinarySerializer`, `PhpNativeSerializer`).
+
+### Toolchain
+
+- Symfony-Patches via `composer update` (8 Security-Advisories → 0).
+- `BackendWarmUpRunner` ist nicht mehr `final` (Testbarkeit).
+- 3 Observability-PHPDocs auf Englisch übersetzt (durchgerutscht in
+  v1.1.0-Sprachumstellung).
+
+### Migration guide (1.x → 2.0)
+
+Für Konsumenten der TYPO3-Cache-API (Standard-Nutzung) sind
+**keine Code-Änderungen nötig**. Der `ClusterFileBackend`-Konstruktor,
+die Cache-Konfiguration und die CLI-Commands sind alle
+backwards-kompatibel.
+
+Direkte Konsumenten der internen Application-Layer-Klassen müssen:
+
+1. `Generation`-Importe und -Referenzen entfernen
+2. `CacheMetadata::fromKvPayload` darf jetzt mit corrupter Payload
+   `\RuntimeException` werfen (bisher konnte das durchschlüpfen).
+3. `LocalPayloadStorePort`-Custom-Implementierungen müssen die neue
+   `probe()`-Methode implementieren.
+4. `CompressorPort`-Custom-Implementierungen müssen die neue
+   `decompress($bytes, $maxOutputBytes)`-Signatur unterstützen.
+5. Direkte `Typo3MetadataCache`-Instanzierung braucht jetzt einen
+   `CacheNamespace` als zweites Argument.
+
 ## [1.3.2] - 2026-05-21
 
 ### Security
@@ -293,6 +439,7 @@ Folgende Checks lieferten keine Treffer:
 - **Constitution-Konformität**: PHPStan Level 8 grün, deptrac 0 Violations,
   keine deprecated TYPO3-14-Symbole, REUSE-Header in allen PHP-Quellen.
 
+[2.0.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.2...v2.0.0
 [1.3.2]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.1...v1.3.2
 [1.3.1]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.3.0...v1.3.1
 [1.3.0]: https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/-/compare/v1.2.1...v1.3.0

@@ -23,10 +23,8 @@ Blick. Detail-Spezifikationen liegen in `specs/001-cluster-cache-backend/`.
 │   Typo3MetadataCache       — Adapter MetadataCachePort ←→ TYPO3-       │
 │                              FrontendInterface (beliebiges Backend)    │
 │   EmptyDirPayloadStore     — atomares pod-lokales File-IO              │
-│   {Igbinary,PhpNative}Ser. — Serializer-Adapter                        │
 │   {Zstd,Gzip,Null}Compr.   — Compressor-Adapter                        │
 │   SystemClock              — ClockPort                                 │
-│   NullMetrics              — MetricsPort (Default für Tests)           │
 │   PrometheusMetrics        — MetricsPort über PSR-3-Logger             │
 │   StructuredLoggerEnricher — reichert Pod-Name + Co. an                │
 │   OptionsValidator         — JSON-Schema-Validation der options[]      │
@@ -48,14 +46,12 @@ Blick. Detail-Spezifikationen liegen in `specs/001-cluster-cache-backend/`.
 │   Contracts (Ports):                                                   │
 │     MetadataCachePort      — die einzige Sicht auf den Metadata-Store  │
 │     LocalPayloadStorePort  — pod-lokales File-IO                       │
-│     SerializerPort         — Serializer-Vertrag                        │
 │     CompressorPort         — Compressor-Vertrag                        │
 │     ClockPort              — zentrale Zeit                             │
 │     MetricsPort            — Counter + Histogram                       │
-│     PayloadRebuilderPort   — Reserve für künftige Erweiterung          │
 │   Models (Value Objects, alle `final readonly`):                       │
 │     CacheNamespace, CacheIdentifier, CacheMetadata,                    │
-│     PayloadHash, PayloadChecksum, Generation, Lifetime,                │
+│     PayloadHash, PayloadChecksum, Lifetime,                            │
 │     TagSet, BackendVersion, SerializerName, CompressionName,           │
 │     PayloadReference                                                   │
 │   Enums:                                                               │

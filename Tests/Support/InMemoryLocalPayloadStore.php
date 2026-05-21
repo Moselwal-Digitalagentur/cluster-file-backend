@@ -51,6 +51,12 @@ final class InMemoryLocalPayloadStore implements LocalPayloadStorePort
         unset($this->files[$hash->digest]);
     }
 
+    public function probe(): bool
+    {
+        // In-memory store is always operable.
+        return true;
+    }
+
     public function iterateAll(): iterable
     {
         foreach (array_keys($this->files) as $digest) {

@@ -27,8 +27,12 @@ final class NullCompressor implements CompressorPort
         return $bytes;
     }
 
-    public function decompress(string $bytes): string
+    public function decompress(string $bytes, int $maxOutputBytes): string
     {
+        if (\strlen($bytes) > $maxOutputBytes) {
+            throw new \RuntimeException(\sprintf('payload size %d exceeds limit of %d', \strlen($bytes), $maxOutputBytes));
+        }
+
         return $bytes;
     }
 }

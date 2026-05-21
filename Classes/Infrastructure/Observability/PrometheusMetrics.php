@@ -12,9 +12,9 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
 /**
- * Emittiert Metriken als strukturierte Logger-Records auf dem `monitoring`-Channel.
- * Ein Prometheus-Exporter kann diese Records via Logstash/Loki/Fluentd auslesen,
- * ohne harte Prometheus-Client-Dependency in dieser Extension.
+ * Emits metrics as structured logger records on the `monitoring` channel.
+ * A Prometheus exporter can ingest these records via Logstash/Loki/Fluentd
+ * without requiring a hard Prometheus client dependency in this extension.
  */
 final readonly class PrometheusMetrics implements MetricsPort
 {

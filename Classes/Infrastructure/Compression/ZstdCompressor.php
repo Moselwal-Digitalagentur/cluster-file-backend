@@ -36,14 +36,21 @@ final class ZstdCompressor implements CompressorPort
         return $result;
     }
 
-    public function decompress(string $bytes): string
+    public function decompress(string $bytes, int $maxOutputBytes): string
     {
         if (!$this->isAvailable()) {
             throw new CompressorUnavailableException('PHP extension "zstd" is not loaded');
         }
+        // ext-zstd has no built-in output-size limit, so we post-check.
+        // The decompression itself still allocates the full size in
+        // memory — for a hard-cap before allocation we would need a
+        // streaming API which the extension does not expose.
         $result = @zstd_uncompress($bytes);
         if (!\is_string($result)) {
             throw new \RuntimeException('zstd_uncompress() failed');
+        }
+        if (\strlen($result) > $maxOutputBytes) {
+            throw new \RuntimeException(\sprintf('zstd_uncompress() produced %d bytes, exceeding limit of %d', \strlen($result), $maxOutputBytes));
         }
 
         return $result;

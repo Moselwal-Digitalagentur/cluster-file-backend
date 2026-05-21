@@ -33,6 +33,28 @@ final readonly class CacheNamespace
     }
 
     /**
+     * Parses a fully qualified namespace string in the form
+     * `cfb:{env}:{instance}:{cacheName}` — used by CLI commands and the
+     * warm-up listener. Returns null instead of throwing so callers can
+     * surface a user-friendly error.
+     */
+    public static function fromString(string $value): ?self
+    {
+        if (1 !== preg_match(
+            '/^cfb:(prod|staging|testing|development):([a-z0-9-]{1,64}):([a-zA-Z0-9_]{1,64})$/',
+            $value,
+            $match,
+        )) {
+            return null;
+        }
+        try {
+            return new self(EnvironmentName::from($match[1]), $match[2], $match[3]);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    /**
      * Returns the logical namespace label `cfb:{env}:{instance}:{cacheName}`
      * for observability purposes (metrics, logs, CLI arguments). This is NOT
      * a persistence key — the keys in the metadata cache backend are managed

@@ -305,8 +305,6 @@ It's not just "smaller *n*": **different complexity class**,
 ```bash
 composer install
 composer test               # Unit tests
-composer test:contract      # Contract tests
-composer test:functional    # Functional (requires TYPO3 testing framework bootstrap)
 composer phpstan            # PHPStan level 8 + bleeding edge
 composer deptrac            # DDD layer enforcement
 composer cs:check           # @Symfony + @PER-CS3x0 + @PHP85Migration via moselwal/dev
@@ -443,6 +441,51 @@ When it is unreachable:
   failures would mask outages.
 
 Alert on `cache_miss_total{reason=metadata-error}` for early detection.
+
+### Required metadata-cache backend capabilities
+
+The metadata cache MUST be backed by a TYPO3 cache backend that
+implements `TaggableBackendInterface`. Otherwise `flushByTag` becomes a
+no-op (the entire tag-based invalidation flow silently does nothing).
+Verified backends:
+
+| Backend | Taggable | Notes |
+|---|---|---|
+| `Typo3DatabaseBackend` | ✅ | zero-dependency default |
+| `KeyValueBackend` (moselwal/keyvalue-store) | ✅ | Redis/Valkey, recommended for high-traffic |
+| `MemcachedBackend` (TYPO3 core) | ❌ | does NOT support tags — incompatible |
+| `RedisBackend` (TYPO3 core) | ❌ | TYPO3's built-in Redis backend is not taggable; use moselwal/keyvalue-store instead |
+
+### Deploy-time IMAGE_TAG consistency
+
+Every container that talks to the same metadata-cache backend MUST see
+the same `IMAGE_TAG` (or whatever variable is configured via
+`backendVersionEnvVar`). If the web pod runs `IMAGE_TAG=1.2.3` and a
+worker / cron pod still runs `IMAGE_TAG=1.2.2`, the two will compute
+different `BackendVersion` values and treat each other's writes as
+blob-misses. Symptom: persistent thrashing in mixed deployments.
+
+Helm/Kustomize tip: extract the tag into a single value and reference
+it from every Pod spec, instead of per-deployment hard-coding.
+
+### Y2K38 limitation for unlimited-lifetime entries
+
+`Lifetime::unlimited()` maps to `expiresAt = 2147483647` (mirrors TYPO3
+core's `Typo3DatabaseBackend::FAKED_UNLIMITED_EXPIRE`). On 2038-01-19
+03:14:07 UTC that timestamp becomes "now" and any entry that was set as
+unlimited will be considered expired. Practical impact between now and
+then: none. After: bump the constant or, more cleanly, migrate to a
+64-bit-safe expiry sentinel in a major release.
+
+### crc32-based BackendVersion folding
+
+`BackendVersion::fromString(...)` folds the deploy identifier via crc32,
+yielding a 32-bit integer. Birthday collisions occur at ~77k unique
+deploy identifiers — extremely unlikely under realistic release cadence
+(a few deploys per day for the lifetime of a project still leaves the
+collision probability below 1 in 10⁵). If you regularly cycle through
+thousands of distinct identifiers, consider truncating to a stable,
+human-readable semver string instead of feeding raw commit SHAs.
 
 ## Common pitfalls
 

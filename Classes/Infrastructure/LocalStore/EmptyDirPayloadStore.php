@@ -39,15 +39,21 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
     {
         $path = $this->pathFor($hash);
         if (!is_file($path)) {
-            throw new PayloadNotFoundException(\sprintf('Payload file not found: %s', $path));
+            throw new PayloadNotFoundException(\sprintf('payload file not found for hash %s', $hash->prefix(12)));
+        }
+        if (is_link($path)) {
+            // A symlink as the payload-store entry means something or
+            // somebody bypassed our atomic-write path. Treat as integrity
+            // failure to trigger the broken-state-fan-out logic.
+            throw new PayloadIntegrityException(\sprintf('payload path is a symlink for hash %s', $hash->prefix(12)));
         }
         $bytes = @file_get_contents($path);
         if (false === $bytes) {
-            throw new PayloadNotFoundException(\sprintf('Payload file unreadable: %s', $path));
+            throw new PayloadNotFoundException(\sprintf('payload file unreadable for hash %s', $hash->prefix(12)));
         }
         $actual = PayloadChecksum::ofBytes($bytes);
         if (!$actual->equals($checksum)) {
-            throw new PayloadIntegrityException(\sprintf('Checksum mismatch for payload at %s (expected %s, got %s)', $path, $checksum->digest, $actual->digest));
+            throw new PayloadIntegrityException(\sprintf('checksum mismatch for hash %s', $hash->prefix(12)));
         }
 
         return $bytes;
@@ -57,22 +63,35 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
     {
         $reference = PayloadReference::build($this->localPath, $hash);
         $directory = $reference->directory();
-        if (!is_dir($directory) && !@mkdir($directory, 0o750, true) && !is_dir($directory)) {
-            throw new LocalStoreWriteException(\sprintf('Failed to create directory %s', $directory));
+
+        // Defense-in-depth against symlink-attack: if the shard directory
+        // or the target file path is a symbolic link, refuse the write.
+        // The K8s emptyDir convention forbids shared mounts for $localPath,
+        // but this guards against operator misconfiguration (sidecar with
+        // write access placing a symlink to /etc/typo3/...).
+        if (is_link($directory)) {
+            throw new LocalStoreWriteException(\sprintf('shard directory is a symlink and refused: %s', basename($directory)));
         }
+        if (!is_dir($directory) && !@mkdir($directory, 0o750, true) && !is_dir($directory)) {
+            throw new LocalStoreWriteException(\sprintf('failed to create shard directory %s', basename($directory)));
+        }
+        if (is_link($reference->path)) {
+            throw new LocalStoreWriteException(\sprintf('target path is a symlink and refused: %s', basename($reference->path)));
+        }
+
         $tmp = @tempnam($directory, '.cfb.tmp.');
         if (false === $tmp) {
-            throw new LocalStoreWriteException(\sprintf('tempnam() failed in %s', $directory));
+            throw new LocalStoreWriteException(\sprintf('tempnam() failed in shard %s', basename($directory)));
         }
         $written = @file_put_contents($tmp, $bytes, \LOCK_EX);
         if (false === $written || $written !== \strlen($bytes)) {
             @unlink($tmp);
-            throw new LocalStoreWriteException(\sprintf('file_put_contents() wrote %d of %d bytes to %s', (int) $written, \strlen($bytes), $tmp));
+            throw new LocalStoreWriteException(\sprintf('partial write: %d of %d bytes', (int) $written, \strlen($bytes)));
         }
         @chmod($tmp, 0o640);
         if (!@rename($tmp, $reference->path)) {
             @unlink($tmp);
-            throw new LocalStoreWriteException(\sprintf('rename() from %s to %s failed', $tmp, $reference->path));
+            throw new LocalStoreWriteException(\sprintf('atomic rename failed for hash %s', $hash->prefix(12)));
         }
     }
 
@@ -82,6 +101,22 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
         if (is_file($path)) {
             @unlink($path);
         }
+    }
+
+    public function probe(): bool
+    {
+        if (!is_dir($this->localPath) && !@mkdir($this->localPath, 0o750, true) && !is_dir($this->localPath)) {
+            return false;
+        }
+        $sentinel = $this->localPath . '/.cfb-probe';
+        $bytes = bin2hex(random_bytes(8));
+        if (false === @file_put_contents($sentinel, $bytes, \LOCK_EX)) {
+            return false;
+        }
+        $readBack = @file_get_contents($sentinel);
+        @unlink($sentinel);
+
+        return $bytes === $readBack;
     }
 
     public function iterateAll(): iterable

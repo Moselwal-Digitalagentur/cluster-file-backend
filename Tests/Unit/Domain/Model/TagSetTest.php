@@ -49,6 +49,13 @@ final class TagSetTest extends TestCase
         new TagSet(array_map(static fn(int $i): string => 'tag_' . $i, range(1, 65)));
     }
 
+    public function testExactly64TagsAreAccepted(): void
+    {
+        $tags = array_map(static fn(int $i): string => 'tag_' . $i, range(1, 64));
+        $set = new TagSet($tags);
+        self::assertCount(64, $set->toArray());
+    }
+
     public function testInvalidTagPatternRejected(): void
     {
         $this->expectException(\InvalidArgumentException::class);

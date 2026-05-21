@@ -60,6 +60,17 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  */
 final class ClusterFileBackend extends AbstractBackend implements TaggableBackendInterface
 {
+    /**
+     * Lifecycle note: the cache name is unknown at construction time —
+     * TYPO3's CacheManager calls `setCache()` afterwards. Since the cache
+     * name participates in metadata-key namespacing, we cannot mark the
+     * namespace-bound services (`metadataCache`, `writer`, `reader`,
+     * `remover`, `namespaceFlusher`, `tagFlusher`, `gcRunner`) as
+     * `readonly`. They are wired twice: once with a placeholder namespace
+     * in the constructor (so the backend is usable before TYPO3 binds it
+     * to a cache, e.g. in tests) and once with the real cache name in
+     * `setCache()`.
+     */
     private CacheNamespace $namespace;
     private readonly EnvironmentName $environment;
     private readonly string $instance;
@@ -67,18 +78,21 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private readonly string $metadataCacheIdentifier;
     private readonly int $cfbDefaultLifetime;
     private readonly int $maxPayloadBytes;
-    private readonly MetadataCachePort $metadataCache;
+    private readonly FrontendInterface $metadataCacheFrontend;
     private readonly EmptyDirPayloadStore $localStore;
     private readonly CompressorPort $compressor;
     private readonly ClockPort $clock;
     private readonly SerializerName $serializer;
     private readonly CompressionName $compressionName;
-    private readonly WriteCacheEntry $writer;
-    private readonly ReadCacheEntry $reader;
-    private readonly RemoveCacheEntry $remover;
-    private readonly FlushNamespace $namespaceFlusher;
-    private readonly FlushByTag $tagFlusher;
-    private readonly RunGarbageCollection $gcRunner;
+    private readonly BackendVersion $backendVersion;
+    private readonly MetricsPort $metrics;
+    private MetadataCachePort $metadataCache;
+    private WriteCacheEntry $writer;
+    private ReadCacheEntry $reader;
+    private RemoveCacheEntry $remover;
+    private FlushNamespace $namespaceFlusher;
+    private FlushByTag $tagFlusher;
+    private RunGarbageCollection $gcRunner;
     private readonly LoggerInterface $cfbLogger;
     private bool $collectGarbageDelegated = false;
 
@@ -106,44 +120,56 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->maxPayloadBytes = (int) $normalized['maxPayloadBytes'];
         $this->cfbLogger = $this->logger ?? new NullLogger();
 
-        $metrics = GeneralUtility::makeInstance(MetricsPort::class);
+        $this->metrics = GeneralUtility::makeInstance(MetricsPort::class);
         $this->clock = GeneralUtility::makeInstance(ClockPort::class);
-        $clock = $this->clock;
 
         $cacheManager = GeneralUtility::makeInstance(CacheManager::class);
-        $this->metadataCache = new Typo3MetadataCache(
-            $this->resolveMetadataFrontend($cacheManager, $this->metadataCacheIdentifier),
-        );
+        $this->metadataCacheFrontend = $this->resolveMetadataFrontend($cacheManager, $this->metadataCacheIdentifier);
 
         $this->serializer = $this->resolveSerializer((string) $normalized['serializer']);
         $this->compressor = $this->resolveCompressor((string) $normalized['compression']);
         $this->compressionName = CompressionName::fromString($this->compressor->name());
+        $this->backendVersion = BackendVersion::fromEnv((string) $normalized['backendVersionEnvVar']);
 
         $this->localStore = new EmptyDirPayloadStore($this->localPath);
         $this->namespace = new CacheNamespace($this->environment, $this->instance, 'unbound');
+        $this->wireNamespaceBoundServices();
+    }
 
+    /**
+     * (Re-)builds every service whose behaviour depends on the current
+     * `$this->namespace`. Called from the constructor (with placeholder
+     * namespace) and from `setCache()` (with the real cache name).
+     */
+    private function wireNamespaceBoundServices(): void
+    {
+        $this->metadataCache = new Typo3MetadataCache(
+            $this->metadataCacheFrontend,
+            $this->namespace,
+        );
         $this->writer = new WriteCacheEntry(
             metadataCache: $this->metadataCache,
             localStore: $this->localStore,
             compressor: $this->compressor,
-            clock: $clock,
-            metrics: $metrics,
+            clock: $this->clock,
+            metrics: $this->metrics,
             hasher: new ComputePayloadHash(),
             serializer: $this->serializer,
             compression: $this->compressionName,
-            backendVersion: BackendVersion::fromEnv((string) $normalized['backendVersionEnvVar']),
+            backendVersion: $this->backendVersion,
         );
         $this->reader = new ReadCacheEntry(
             metadataCache: $this->metadataCache,
             localStore: $this->localStore,
             compressor: $this->compressor,
-            clock: $clock,
-            metrics: $metrics,
+            clock: $this->clock,
+            metrics: $this->metrics,
+            maxDecompressedBytes: $this->maxPayloadBytes,
         );
         $this->remover = new RemoveCacheEntry($this->metadataCache);
-        $this->namespaceFlusher = new FlushNamespace($this->metadataCache, $metrics);
-        $this->tagFlusher = new FlushByTag($this->metadataCache, $metrics);
-        $this->gcRunner = new RunGarbageCollection($this->metadataCache, $clock);
+        $this->namespaceFlusher = new FlushNamespace($this->metadataCache, $this->metrics);
+        $this->tagFlusher = new FlushByTag($this->metadataCache, $this->metrics);
+        $this->gcRunner = new RunGarbageCollection($this->metadataCache, $this->clock);
     }
 
     /**
@@ -182,6 +208,12 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             $this->instance,
             $cache->getIdentifier(),
         );
+        // Rebuild the namespace-bound services so that the metadata cache
+        // (and everything that depends on it) writes tags namespaced to
+        // this specific cache name. Without this re-wire, all
+        // ClusterFileBackend instances would share the same tag space in
+        // the underlying metadata-cache frontend.
+        $this->wireNamespaceBoundServices();
     }
 
     /**
@@ -208,11 +240,15 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::set failed', [
                 'cacheName' => $this->namespace->cacheName,
-                'identifier' => $identifier->value,
-                'exception' => $e,
+                'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                'exceptionClass' => $e::class,
+                'exceptionMessage' => $e->getMessage(),
             ]);
 
-            throw new Exception('ClusterFileBackend write failed: ' . $e->getMessage(), 1747500022, $e);
+            // Do not leak the wrapped message — full details are in the
+            // structured log above. TYPO3 may surface this exception in
+            // debug error pages.
+            throw new Exception('ClusterFileBackend write failed; see log for details', 1747500022, $e);
         }
     }
 
@@ -224,8 +260,9 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::get failed', [
                 'cacheName' => $this->namespace->cacheName,
-                'identifier' => $identifier->value,
-                'exception' => $e,
+                'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                'exceptionClass' => $e::class,
+                'exceptionMessage' => $e->getMessage(),
             ]);
 
             return false;
@@ -242,8 +279,9 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::has failed', [
                 'cacheName' => $this->namespace->cacheName,
-                'identifier' => $identifier->value,
-                'exception' => $e,
+                'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                'exceptionClass' => $e::class,
+                'exceptionMessage' => $e->getMessage(),
             ]);
 
             return false;
@@ -264,8 +302,9 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::remove failed', [
                 'cacheName' => $this->namespace->cacheName,
-                'identifier' => $identifier->value,
-                'exception' => $e,
+                'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                'exceptionClass' => $e::class,
+                'exceptionMessage' => $e->getMessage(),
             ]);
 
             return false;
@@ -302,6 +341,19 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         }
         $this->collectGarbageDelegated = true;
         $this->gcRunner->execute($this->namespace);
+    }
+
+    /**
+     * Hashes the cache identifier before logging. Cache identifiers in
+     * TYPO3 routinely contain session-id / user-hash fragments
+     * (e.g. `userhash_%session_id%`); emitting them as plaintext into
+     * PSR-3 logs that ship to Loki/Splunk is an unnecessary disclosure.
+     * The 16-hex-char prefix gives operators enough entropy for cache-key
+     * correlation across pods without leaking the underlying value.
+     */
+    private function hashIdentifierForLog(CacheIdentifier $identifier): string
+    {
+        return substr(hash('sha256', $identifier->value), 0, 16);
     }
 
     private function resolveMetadataFrontend(CacheManager $cacheManager, string $identifier): FrontendInterface

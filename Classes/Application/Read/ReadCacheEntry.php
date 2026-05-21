@@ -21,12 +21,36 @@ use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
 
 final readonly class ReadCacheEntry
 {
+    /**
+     * Lower TTL bound for the broken-state marker. Gives concurrent
+     * readers a coherence window during which they share the "do not
+     * touch this entry" signal — prevents thundering-herd re-reads of
+     * the same corrupt blob across pods.
+     */
+    private const int BROKEN_STATE_MIN_TTL_SECONDS = 60;
+
+    /**
+     * Upper TTL bound for the broken-state marker. After this the entry
+     * is eligible for re-population from a caller rebuild; we do not
+     * want broken markers to linger indefinitely.
+     */
+    private const int BROKEN_STATE_MAX_TTL_SECONDS = 3600;
+
+    /**
+     * Default upper bound for the decompressed payload size when the
+     * caller does not pass an explicit one. ClusterFileBackend always
+     * passes its configured `maxPayloadBytes`; this default applies to
+     * tests and ad-hoc usage.
+     */
+    private const int DEFAULT_MAX_DECOMPRESSED_BYTES = 256 * 1024 * 1024;
+
     public function __construct(
         private MetadataCachePort $metadataCache,
         private LocalPayloadStorePort $localStore,
         private CompressorPort $compressor,
         private ClockPort $clock,
         private MetricsPort $metrics,
+        private int $maxDecompressedBytes = self::DEFAULT_MAX_DECOMPRESSED_BYTES,
     ) {}
 
     public function execute(CacheNamespace $namespace, CacheIdentifier $identifier): ?string
@@ -73,7 +97,6 @@ final readonly class ReadCacheEntry
                 identifier: $metadata->identifier,
                 hash: $metadata->hash,
                 checksum: $metadata->checksum,
-                generation: $metadata->generation,
                 lifetime: $metadata->lifetime,
                 serializer: $metadata->serializer,
                 compression: $metadata->compression,
@@ -82,17 +105,26 @@ final readonly class ReadCacheEntry
                 state: CacheState::Broken,
                 backendVersion: $metadata->backendVersion,
             );
-            // Persist the broken state with at least 60s TTL so that other
-            // pods do not immediately re-touch the corrupt entry — even if the
-            // original lifetime was about to expire. Cap at 3600s so broken
-            // markers do not linger forever.
-            $brokenTtl = max(60, min(3600, $metadata->lifetime->remainingSeconds($now)));
-            $this->metadataCache->set(
-                $identifier,
-                $brokenMeta,
-                $metadata->tags->toArray(),
-                $brokenTtl,
+            $brokenTtl = max(
+                self::BROKEN_STATE_MIN_TTL_SECONDS,
+                min(
+                    self::BROKEN_STATE_MAX_TTL_SECONDS,
+                    $metadata->lifetime->remainingSeconds($now),
+                ),
             );
+            try {
+                $this->metadataCache->set(
+                    $identifier,
+                    $brokenMeta,
+                    $metadata->tags->toArray(),
+                    $brokenTtl,
+                );
+            } catch (\Throwable) {
+                // The metadata backend may have flickered exactly while
+                // we are persisting the broken marker. That is recoverable
+                // — the next read will simply re-detect the integrity
+                // failure. Do not propagate; we already counted the miss.
+            }
             $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'broken']);
 
             return null;
@@ -106,7 +138,7 @@ final readonly class ReadCacheEntry
             (float) \strlen($bytes),
         );
 
-        return $this->compressor->decompress($bytes);
+        return $this->compressor->decompress($bytes, $this->maxDecompressedBytes);
     }
 
     /**

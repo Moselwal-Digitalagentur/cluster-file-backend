@@ -64,8 +64,6 @@
     },
     "scripts": {
         "test": "phpunit --testsuite=Unit",
-        "test:contract": "phpunit --testsuite=Contract",
-        "test:functional": "phpunit --testsuite=Functional",
         "phpstan": "phpstan analyse --memory-limit=512M",
         "deptrac": "deptrac analyse --no-progress",
         "cs:check": "php-cs-fixer fix --dry-run --diff",

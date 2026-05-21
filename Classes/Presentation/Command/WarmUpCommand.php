@@ -7,7 +7,6 @@ declare(strict_types=1);
 
 namespace Moselwal\Typo3ClusterCache\Presentation\Command;
 
-use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
 use Moselwal\Typo3ClusterCache\Infrastructure\WarmUp\BackendWarmUpRunner;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -100,22 +99,12 @@ final class WarmUpCommand extends Command
 
     private function parseNamespace(string $value, OutputInterface $output): ?CacheNamespace
     {
-        if (1 !== preg_match(
-            '/^cfb:(prod|staging|testing|development):([a-z0-9-]{1,64}):([a-zA-Z0-9_]{1,64})$/',
-            $value,
-            $m,
-        )) {
+        $namespace = CacheNamespace::fromString($value);
+        if (null === $namespace) {
             $output->writeln(\sprintf('<error>Invalid --namespace "%s"</error>', $value));
-
-            return null;
         }
-        try {
-            return new CacheNamespace(EnvironmentName::from($m[1]), $m[2], $m[3]);
-        } catch (\InvalidArgumentException $e) {
-            $output->writeln('<error>' . $e->getMessage() . '</error>');
 
-            return null;
-        }
+        return $namespace;
     }
 
     /**

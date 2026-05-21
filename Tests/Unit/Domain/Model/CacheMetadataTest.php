@@ -12,7 +12,6 @@ use Moselwal\Typo3ClusterCache\Domain\Model\BackendVersion;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
 use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
-use Moselwal\Typo3ClusterCache\Domain\Model\Generation;
 use Moselwal\Typo3ClusterCache\Domain\Model\Lifetime;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadChecksum;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadHash;
@@ -33,7 +32,6 @@ final class CacheMetadataTest extends TestCase
         self::assertTrue($metadata->identifier->equals($restored->identifier));
         self::assertTrue($metadata->hash->equals($restored->hash));
         self::assertTrue($metadata->checksum->equals($restored->checksum));
-        self::assertSame($metadata->generation->value, $restored->generation->value);
         self::assertSame($metadata->lifetime->createdAt, $restored->lifetime->createdAt);
         self::assertSame($metadata->lifetime->expiresAt, $restored->lifetime->expiresAt);
         self::assertSame($metadata->payloadSize, $restored->payloadSize);
@@ -42,14 +40,12 @@ final class CacheMetadataTest extends TestCase
         self::assertSame($metadata->backendVersion->value, $restored->backendVersion->value);
     }
 
-    public function testIsValidRequiresValidStateAndUnexpiredAndAtLeastCurrentGeneration(): void
+    public function testIsValidRequiresValidStateAndUnexpired(): void
     {
         $metadata = $this->buildMetadata();
-        $currentGen = new Generation(7);
 
-        self::assertTrue($metadata->isValid(now: 1500, currentNamespaceGeneration: $currentGen));
-        self::assertFalse($metadata->isValid(now: 9999, currentNamespaceGeneration: $currentGen));
-        self::assertFalse($metadata->isValid(now: 1500, currentNamespaceGeneration: new Generation(99)));
+        self::assertTrue($metadata->isValid(now: 1500));
+        self::assertFalse($metadata->isValid(now: 9999));
     }
 
     public function testIsValidReturnsFalseForBrokenState(): void
@@ -58,7 +54,6 @@ final class CacheMetadataTest extends TestCase
             identifier: new CacheIdentifier('x'),
             hash: new PayloadHash(str_repeat('a', 64)),
             checksum: new PayloadChecksum(str_repeat('b', 64)),
-            generation: new Generation(7),
             lifetime: new Lifetime(1000, 2000),
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
@@ -67,7 +62,7 @@ final class CacheMetadataTest extends TestCase
             state: CacheState::Broken,
             backendVersion: new BackendVersion(1),
         );
-        self::assertFalse($broken->isValid(1500, new Generation(7)));
+        self::assertFalse($broken->isValid(1500));
     }
 
     public function testFromKvPayloadFailsOnMissingField(): void
@@ -76,15 +71,34 @@ final class CacheMetadataTest extends TestCase
         CacheMetadata::fromKvPayload(['identifier' => 'a']);
     }
 
+    public function testFromKvPayloadFailsOnTypeMismatch(): void
+    {
+        // expiresAt as string instead of int — a corrupted metadata cache
+        // entry must NOT propagate as a valid CacheMetadata.
+        $this->expectException(\RuntimeException::class);
+        $payload = $this->buildMetadata()->toKvPayload();
+        $payload['expiresAt'] = 'not-an-int';
+        CacheMetadata::fromKvPayload($payload);
+    }
+
+    public function testFromKvPayloadTolersLegacyGenerationField(): void
+    {
+        // v1.x stored a `generation` field that v2 no longer uses. The
+        // parser must accept the extra key without error.
+        $payload = $this->buildMetadata()->toKvPayload();
+        $payload['generation'] = 7;
+        $restored = CacheMetadata::fromKvPayload($payload);
+        self::assertSame(4096, $restored->payloadSize);
+    }
+
     private function buildMetadata(): CacheMetadata
     {
         return new CacheMetadata(
             identifier: new CacheIdentifier('page_42'),
             hash: new PayloadHash(str_repeat('a', 64)),
             checksum: new PayloadChecksum(str_repeat('b', 64)),
-            generation: new Generation(7),
             lifetime: new Lifetime(1000, 2000),
-            serializer: new SerializerName(SerializerName::IGBINARY, 'igbinary:3.2.16'),
+            serializer: new SerializerName(SerializerName::IGBINARY, 'igbinary:3'),
             compression: CompressionName::zstd(),
             payloadSize: 4096,
             tags: new TagSet(['pages_42', 'site_1']),

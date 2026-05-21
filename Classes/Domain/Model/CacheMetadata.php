@@ -15,7 +15,6 @@ final readonly class CacheMetadata
         public CacheIdentifier $identifier,
         public PayloadHash $hash,
         public PayloadChecksum $checksum,
-        public Generation $generation,
         public Lifetime $lifetime,
         public SerializerName $serializer,
         public CompressionName $compression,
@@ -29,11 +28,10 @@ final readonly class CacheMetadata
         }
     }
 
-    public function isValid(int $now, Generation $currentNamespaceGeneration): bool
+    public function isValid(int $now): bool
     {
         return $this->state->isValid()
-            && !$this->lifetime->isExpired($now)
-            && $this->generation->isAtLeast($currentNamespaceGeneration);
+            && !$this->lifetime->isExpired($now);
     }
 
     /**
@@ -45,7 +43,6 @@ final readonly class CacheMetadata
             'identifier' => $this->identifier->value,
             'hash' => 'sha256:' . $this->hash->digest,
             'checksum' => 'sha256:' . $this->checksum->digest,
-            'generation' => $this->generation->value,
             'createdAt' => $this->lifetime->createdAt,
             'expiresAt' => $this->lifetime->expiresAt,
             'serializer' => $this->serializer->version,
@@ -58,16 +55,26 @@ final readonly class CacheMetadata
     }
 
     /**
+     * Defensive parser for metadata-cache payloads. Tolerates extra fields
+     * (e.g. legacy `generation` from v1.x) and validates every required
+     * field's type. Returns `null` on any structural problem so the caller
+     * can treat the entry as a cache miss without crashing.
+     *
      * @param array<string, mixed> $raw
      */
     public static function fromKvPayload(array $raw): self
     {
-        foreach (['identifier', 'hash', 'checksum', 'generation', 'createdAt', 'expiresAt',
-            'serializer', 'compression', 'payloadSize', 'tags', 'state', 'backendVersion'] as $required) {
-            if (!\array_key_exists($required, $raw)) {
-                throw new \RuntimeException(\sprintf('CacheMetadata payload missing required field "%s"', $required));
-            }
-        }
+        self::requireString($raw, 'identifier');
+        self::requireString($raw, 'hash');
+        self::requireString($raw, 'checksum');
+        self::requireInt($raw, 'createdAt');
+        self::requireInt($raw, 'expiresAt');
+        self::requireString($raw, 'serializer');
+        self::requireString($raw, 'compression');
+        self::requireInt($raw, 'payloadSize');
+        self::requireArray($raw, 'tags');
+        self::requireString($raw, 'state');
+        self::requireInt($raw, 'backendVersion');
 
         $hashDigest = self::stripAlgoPrefix((string) $raw['hash']);
         $checksumDigest = self::stripAlgoPrefix((string) $raw['checksum']);
@@ -80,7 +87,6 @@ final readonly class CacheMetadata
             identifier: new CacheIdentifier((string) $raw['identifier']),
             hash: new PayloadHash($hashDigest),
             checksum: new PayloadChecksum($checksumDigest),
-            generation: new Generation((int) $raw['generation']),
             lifetime: new Lifetime((int) $raw['createdAt'], (int) $raw['expiresAt']),
             serializer: new SerializerName($serializerName, $serializer),
             compression: CompressionName::fromString((string) $raw['compression']),
@@ -89,6 +95,36 @@ final readonly class CacheMetadata
             state: CacheState::from((string) $raw['state']),
             backendVersion: new BackendVersion((int) $raw['backendVersion']),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private static function requireString(array $raw, string $field): void
+    {
+        if (!\array_key_exists($field, $raw) || !\is_string($raw[$field])) {
+            throw new \RuntimeException(\sprintf('CacheMetadata payload field "%s" missing or not a string', $field));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private static function requireInt(array $raw, string $field): void
+    {
+        if (!\array_key_exists($field, $raw) || !\is_int($raw[$field])) {
+            throw new \RuntimeException(\sprintf('CacheMetadata payload field "%s" missing or not an int', $field));
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     */
+    private static function requireArray(array $raw, string $field): void
+    {
+        if (!\array_key_exists($field, $raw) || !\is_array($raw[$field])) {
+            throw new \RuntimeException(\sprintf('CacheMetadata payload field "%s" missing or not an array', $field));
+        }
     }
 
     private static function stripAlgoPrefix(string $value): string

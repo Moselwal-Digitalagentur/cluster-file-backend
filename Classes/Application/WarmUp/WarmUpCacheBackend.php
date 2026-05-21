@@ -103,19 +103,10 @@ final readonly class WarmUpCacheBackend
 
     private function checkLocalStoreWritable(CacheNamespace $namespace): bool
     {
+        unset($namespace);
         try {
-            // We do not write anything — we just resolve a probe path; if
-            // the local store cannot even compute it, the configuration is
-            // broken. Actual write-probing is done via mkdir attempts inside
-            // the local store at runtime.
-            $this->localStore->pathFor(
-                new \Moselwal\Typo3ClusterCache\Domain\Model\PayloadHash(\str_repeat('a', 64)),
-            );
-
-            return true;
+            return $this->localStore->probe();
         } catch (\Throwable) {
-            unset($namespace);
-
             return false;
         }
     }

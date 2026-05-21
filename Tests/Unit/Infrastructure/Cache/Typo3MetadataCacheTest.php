@@ -8,11 +8,12 @@ declare(strict_types=1);
 namespace Moselwal\Typo3ClusterCache\Tests\Unit\Infrastructure\Cache;
 
 use Moselwal\Typo3ClusterCache\Domain\Enum\CacheState;
+use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
 use Moselwal\Typo3ClusterCache\Domain\Model\BackendVersion;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
+use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
 use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
-use Moselwal\Typo3ClusterCache\Domain\Model\Generation;
 use Moselwal\Typo3ClusterCache\Domain\Model\Lifetime;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadChecksum;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadHash;
@@ -34,7 +35,10 @@ final class Typo3MetadataCacheTest extends TestCase
         $backend = new TransientMemoryBackend();
         $frontend = new VariableFrontend('cluster_meta_test', $backend);
         $backend->setCache($frontend);
-        $this->cache = new Typo3MetadataCache($frontend);
+        $this->cache = new Typo3MetadataCache(
+            $frontend,
+            new CacheNamespace(EnvironmentName::Testing, 'site', 'pages'),
+        );
     }
 
     public function testSetAndGetRoundtrip(): void
@@ -109,7 +113,6 @@ final class Typo3MetadataCacheTest extends TestCase
             identifier: $id,
             hash: new PayloadHash(str_repeat('a', 64)),
             checksum: new PayloadChecksum(str_repeat('b', 64)),
-            generation: new Generation(0),
             lifetime: new Lifetime(1_700_000_000, 1_700_003_600),
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),

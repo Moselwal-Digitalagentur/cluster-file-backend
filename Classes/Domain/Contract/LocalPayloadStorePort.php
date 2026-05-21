@@ -34,6 +34,16 @@ interface LocalPayloadStorePort
     public function delete(PayloadHash $hash): void;
 
     /**
+     * Performs a real write probe to verify the local store is operable:
+     * creates the local path's directory tree, writes and removes a
+     * sentinel file. Used by deployment-time warm-up to surface
+     * permission / disk-full / mount-broken issues before traffic hits.
+     *
+     * @return bool true when a sentinel write succeeded
+     */
+    public function probe(): bool;
+
+    /**
      * @return iterable<int, PayloadHash>
      */
     public function iterateAll(): iterable;

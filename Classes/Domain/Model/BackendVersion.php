@@ -46,11 +46,23 @@ final readonly class BackendVersion
      * deploys, not cryptographic uniqueness; the actual payload hash is
      * sha256).
      */
+    /**
+     * Upper bound for the env-variable string length. The identifier is
+     * folded via crc32 anyway, so values much longer than a Git SHA-1
+     * (40 chars) or a release tag (~50 chars) carry no extra information
+     * — but unchecked length is a (very minor) CPU-DoS vector if an
+     * attacker can set arbitrary container env vars.
+     */
+    private const int MAX_ENV_VALUE_LENGTH = 512;
+
     public static function fromEnv(string $envVar = self::DEFAULT_ENV_VAR): self
     {
         $value = getenv($envVar);
         if (!\is_string($value) || '' === $value) {
             return self::current();
+        }
+        if (\strlen($value) > self::MAX_ENV_VALUE_LENGTH) {
+            $value = substr($value, 0, self::MAX_ENV_VALUE_LENGTH);
         }
 
         return self::fromString($value);

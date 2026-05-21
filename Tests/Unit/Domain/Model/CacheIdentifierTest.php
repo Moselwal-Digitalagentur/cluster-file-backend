@@ -38,4 +38,12 @@ final class CacheIdentifierTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
         new CacheIdentifier($value);
     }
+
+    public function testIdentifierAtExactMaxLengthIsAccepted(): void
+    {
+        // TYPO3 PATTERN_ENTRYIDENTIFIER allows up to 250 characters.
+        $value = str_repeat('a', 250);
+        $id = new CacheIdentifier($value);
+        self::assertSame($value, $id->value);
+    }
 }

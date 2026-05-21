@@ -8,10 +8,11 @@ declare(strict_types=1);
 namespace Moselwal\Typo3ClusterCache\Infrastructure\Observability;
 
 /**
- * Reichert Log-Records des ClusterFileBackend mit den Pflichtfeldern an
- * (cacheName, identifier, hash, generation, podName, repairState).
+ * Enriches ClusterFileBackend log records with structured observability
+ * fields. Currently adds `podName` (resolved from `POD_NAME` env var or
+ * `gethostname()`) so log lines from different pods can be correlated.
  *
- * Verwendung als PSR-3-Processor:
+ * Usage as a PSR-3 processor:
  *   $logger->pushProcessor(new StructuredLoggerEnricher());
  */
 final class StructuredLoggerEnricher

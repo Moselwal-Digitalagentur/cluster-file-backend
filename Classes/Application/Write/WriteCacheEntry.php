@@ -19,7 +19,6 @@ use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
 use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
-use Moselwal\Typo3ClusterCache\Domain\Model\Generation;
 use Moselwal\Typo3ClusterCache\Domain\Model\Lifetime;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadChecksum;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadHash;
@@ -87,7 +86,7 @@ final class WriteCacheEntry
             $identifier,
             $metadata,
             $tags->toArray(),
-            $lifetime->remainingSeconds($this->clock->now()),
+            $this->ttlForBackend($lifetime),
         );
         $this->metrics->counter('cache_write_total', $this->labels($namespace));
         $this->metrics->histogram(
@@ -109,7 +108,6 @@ final class WriteCacheEntry
             identifier: $identifier,
             hash: $hash,
             checksum: $checksum,
-            generation: new Generation(0),
             lifetime: $lifetime,
             serializer: $this->serializer,
             compression: $this->compression,

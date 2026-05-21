@@ -58,6 +58,11 @@ final class DiskFullSimulationTest extends TestCase
 
             public function delete(PayloadHash $hash): void {}
 
+            public function probe(): bool
+            {
+                return false;
+            }
+
             public function iterateAll(): iterable
             {
                 yield from [];

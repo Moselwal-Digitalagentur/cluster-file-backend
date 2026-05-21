@@ -15,5 +15,12 @@ interface CompressorPort
 
     public function compress(string $bytes): string;
 
-    public function decompress(string $bytes): string;
+    /**
+     * Decompress bytes with an explicit upper bound on the output size, as
+     * protection against compression bombs (e.g. a 100-byte gzip stream
+     * that expands to gigabytes). Implementations MUST raise
+     * {@see \RuntimeException} when the decompressed output would exceed
+     * `$maxOutputBytes`.
+     */
+    public function decompress(string $bytes, int $maxOutputBytes): string;
 }

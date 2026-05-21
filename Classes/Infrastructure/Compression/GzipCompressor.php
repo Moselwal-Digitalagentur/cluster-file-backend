@@ -32,11 +32,17 @@ final class GzipCompressor implements CompressorPort
         return $result;
     }
 
-    public function decompress(string $bytes): string
+    public function decompress(string $bytes, int $maxOutputBytes): string
     {
-        $result = gzinflate($bytes);
+        // gzinflate's $max_length parameter caps the inflate output and
+        // returns false when the limit is reached — exactly the
+        // compression-bomb protection we need. The `@` suppresses the
+        // accompanying E_WARNING ("insufficient memory") that PHP emits
+        // when the cap fires; we re-raise it deterministically as a
+        // RuntimeException instead.
+        $result = @gzinflate($bytes, $maxOutputBytes);
         if (false === $result) {
-            throw new \RuntimeException('gzinflate() failed');
+            throw new \RuntimeException(\sprintf('gzinflate() failed or output exceeded %d bytes', $maxOutputBytes));
         }
 
         return $result;

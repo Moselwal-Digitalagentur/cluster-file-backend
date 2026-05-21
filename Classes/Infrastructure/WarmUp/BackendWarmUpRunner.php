@@ -27,7 +27,7 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * {@see CacheManager} and constructs the application service against its
  * internal collaborators.
  */
-final readonly class BackendWarmUpRunner
+readonly class BackendWarmUpRunner
 {
     public function __construct(
         private CacheManager $cacheManager,
@@ -50,7 +50,7 @@ final readonly class BackendWarmUpRunner
         $localStore = $this->resolveLocalStore($clusterBackend);
 
         $service = new WarmUpCacheBackend(
-            metadataCache: new Typo3MetadataCache($metadataFrontend),
+            metadataCache: new Typo3MetadataCache($metadataFrontend, $namespace),
             localStore: $localStore,
             clock: $this->clock,
             metrics: $this->metrics,
