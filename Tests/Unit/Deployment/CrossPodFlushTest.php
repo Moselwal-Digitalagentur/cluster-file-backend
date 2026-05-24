@@ -73,36 +73,38 @@ final class CrossPodFlushTest extends TestCase
         $this->podAWriter = new WriteCacheEntry(
             metadataCache: $this->sharedMetadata,
             localStore: $this->podALocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $this->clock,
             metrics: $this->metrics,
             hasher: $hasher,
             serializer: $serializer,
             compression: $compression,
             backendVersion: $backendVersion,
+            minCompressedBytes: 0,
         );
         $this->podBWriter = new WriteCacheEntry(
             metadataCache: $this->sharedMetadata,
             localStore: $this->podBLocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $this->clock,
             metrics: $this->metrics,
             hasher: $hasher,
             serializer: $serializer,
             compression: $compression,
             backendVersion: $backendVersion,
+            minCompressedBytes: 0,
         );
         $this->podAReader = new ReadCacheEntry(
             metadataCache: $this->sharedMetadata,
             localStore: $this->podALocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $this->clock,
             metrics: $this->metrics,
         );
         $this->podBReader = new ReadCacheEntry(
             metadataCache: $this->sharedMetadata,
             localStore: $this->podBLocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $this->clock,
             metrics: $this->metrics,
         );
@@ -259,13 +261,14 @@ final class CrossPodFlushTest extends TestCase
             fn(InMemoryLocalPayloadStore $store): WriteCacheEntry => new WriteCacheEntry(
                 metadataCache: $this->sharedMetadata,
                 localStore: $store,
-                compressor: new NullCompressor(),
+                compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single(new NullCompressor()),
                 clock: $this->clock,
                 metrics: $this->metrics,
                 hasher: new ComputePayloadHash(),
                 serializer: SerializerName::phpNative(),
                 compression: CompressionName::none(),
                 backendVersion: new BackendVersion(1),
+                minCompressedBytes: 0,
             ),
             $localStores,
         );
@@ -273,7 +276,7 @@ final class CrossPodFlushTest extends TestCase
             fn(InMemoryLocalPayloadStore $store): ReadCacheEntry => new ReadCacheEntry(
                 metadataCache: $this->sharedMetadata,
                 localStore: $store,
-                compressor: new NullCompressor(),
+                compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single(new NullCompressor()),
                 clock: $this->clock,
                 metrics: $this->metrics,
             ),

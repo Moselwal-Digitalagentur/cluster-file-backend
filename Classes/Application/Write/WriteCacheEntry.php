@@ -18,6 +18,7 @@ use Moselwal\Typo3ClusterCache\Domain\Model\BackendVersion;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
+use Moselwal\Typo3ClusterCache\Domain\Model\CompressionAlgo;
 use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
 use Moselwal\Typo3ClusterCache\Domain\Model\Lifetime;
 use Moselwal\Typo3ClusterCache\Domain\Model\PayloadChecksum;
@@ -27,16 +28,23 @@ use Moselwal\Typo3ClusterCache\Domain\Model\TagSet;
 
 final class WriteCacheEntry
 {
+    /**
+     * @param array<string, CompressorPort> $compressorsByAlgo Lookup from
+     *                                                         CompressionAlgo->value to compressor. Always contains at least
+     *                                                         the configured codec (`$compression`) and a NullCompressor so the
+     *                                                         skip-compress path is always available.
+     */
     public function __construct(
         private readonly MetadataCachePort $metadataCache,
         private readonly LocalPayloadStorePort $localStore,
-        private readonly CompressorPort $compressor,
+        private readonly array $compressorsByAlgo,
         private readonly ClockPort $clock,
         private readonly MetricsPort $metrics,
         private readonly ComputePayloadHash $hasher,
         private readonly SerializerName $serializer,
         private readonly CompressionName $compression,
         private readonly BackendVersion $backendVersion,
+        private readonly int $minCompressedBytes,
     ) {}
 
     public function execute(
@@ -46,14 +54,23 @@ final class WriteCacheEntry
         TagSet $tags,
         int $lifetimeSeconds,
     ): void {
-        $compressed = $this->compressor->compress($rawBytes);
+        // Skip-compress path for small payloads and for caches that have
+        // turned compression off entirely (e.g. PhpFrontend caches that
+        // must keep plain text on disk so OPcache can ingest them).
+        $effectiveAlgo = (\strlen($rawBytes) < $this->minCompressedBytes || CompressionAlgo::None === $this->compression->name)
+            ? CompressionAlgo::None
+            : $this->compression->name;
+        $compressor = $this->compressorsByAlgo[$effectiveAlgo->value]
+            ?? throw new \LogicException('compressor not registered for ' . $effectiveAlgo->value);
+        $compressed = $compressor->compress($rawBytes);
+        $payload = $effectiveAlgo->marker() . $compressed;
         $hash = $this->hasher->fromRawBytes(
             $rawBytes,
             $this->serializer,
             $this->compression,
             $this->backendVersion,
         );
-        $checksum = PayloadChecksum::ofBytes($compressed);
+        $checksum = PayloadChecksum::ofBytes($payload);
         $lifetime = 0 === $lifetimeSeconds
             ? Lifetime::unlimited($this->clock)
             : Lifetime::fromSeconds($lifetimeSeconds, $this->clock);
@@ -61,10 +78,10 @@ final class WriteCacheEntry
         $existing = $this->metadataCache->get($identifier);
         if (null !== $existing && $existing->hash->equals($hash)) {
             // Repair path: same order — local first, then metadata.
-            $this->localStore->write($hash, $compressed);
+            $this->localStore->write($hash, $payload);
             $this->metadataCache->set(
                 $identifier,
-                $this->buildMetadata($identifier, $hash, $checksum, $lifetime, $tags, $compressed),
+                $this->buildMetadata($identifier, $hash, $checksum, $lifetime, $tags, $payload),
                 $tags->toArray(),
                 $this->ttlForBackend($lifetime),
             );
@@ -80,8 +97,8 @@ final class WriteCacheEntry
         // pod restart (emptyDir reset) or GC removes. Both kinds of orphan
         // are harmless compared to "metadata says valid, every pod sees an
         // endless blob-miss".
-        $metadata = $this->buildMetadata($identifier, $hash, $checksum, $lifetime, $tags, $compressed);
-        $this->localStore->write($hash, $compressed);
+        $metadata = $this->buildMetadata($identifier, $hash, $checksum, $lifetime, $tags, $payload);
+        $this->localStore->write($hash, $payload);
         $this->metadataCache->set(
             $identifier,
             $metadata,
@@ -92,7 +109,7 @@ final class WriteCacheEntry
         $this->metrics->histogram(
             'payload_size_bytes',
             $this->labels($namespace) + ['direction' => 'write'],
-            (float) \strlen($compressed),
+            (float) \strlen($payload),
         );
     }
 
@@ -102,7 +119,7 @@ final class WriteCacheEntry
         PayloadChecksum $checksum,
         Lifetime $lifetime,
         TagSet $tags,
-        string $compressed,
+        string $payload,
     ): CacheMetadata {
         return new CacheMetadata(
             identifier: $identifier,
@@ -111,7 +128,7 @@ final class WriteCacheEntry
             lifetime: $lifetime,
             serializer: $this->serializer,
             compression: $this->compression,
-            payloadSize: \strlen($compressed),
+            payloadSize: \strlen($payload),
             tags: $tags,
             state: CacheState::Valid,
             backendVersion: $this->backendVersion,

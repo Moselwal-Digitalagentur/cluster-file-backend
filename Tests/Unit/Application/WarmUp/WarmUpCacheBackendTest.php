@@ -60,13 +60,14 @@ final class WarmUpCacheBackendTest extends TestCase
         $writer = new WriteCacheEntry(
             metadataCache: $metadataCache,
             localStore: $localStore,
-            compressor: new NullCompressor(),
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single(new NullCompressor()),
             clock: $clock,
             metrics: $metrics,
             hasher: new ComputePayloadHash(),
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
         $present = new CacheIdentifier('page_42');
         $missing = new CacheIdentifier('page_7');

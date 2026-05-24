@@ -217,7 +217,7 @@ final class MetadataCacheOfflineTest extends TestCase
         return new ReadCacheEntry(
             metadataCache: $metadata,
             localStore: new InMemoryLocalPayloadStore(),
-            compressor: new NullCompressor(),
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single(new NullCompressor()),
             clock: new FakeClock(1_700_000_000),
             metrics: new FakeMetrics(),
         );
@@ -228,13 +228,14 @@ final class MetadataCacheOfflineTest extends TestCase
         return new WriteCacheEntry(
             metadataCache: $metadata,
             localStore: $local,
-            compressor: new NullCompressor(),
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single(new NullCompressor()),
             clock: new FakeClock(1_700_000_000),
             metrics: new FakeMetrics(),
             hasher: new ComputePayloadHash(),
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
     }
 }

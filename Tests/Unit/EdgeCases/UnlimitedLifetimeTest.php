@@ -53,18 +53,19 @@ final class UnlimitedLifetimeTest extends TestCase
         $this->writer = new WriteCacheEntry(
             metadataCache: $this->metadataCache,
             localStore: $this->local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $this->clock,
             metrics: $metrics,
             hasher: new ComputePayloadHash(),
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
         $this->reader = new ReadCacheEntry(
             metadataCache: $this->metadataCache,
             localStore: $this->local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $this->clock,
             metrics: $metrics,
         );

@@ -17,17 +17,28 @@ use Moselwal\Typo3ClusterCache\Domain\Model\PayloadReference;
 
 final class EmptyDirPayloadStore implements LocalPayloadStorePort
 {
+    /**
+     * @param string $fileSuffix Appended to every payload filename. The
+     *                           default empty string keeps backwards compatibility for binary
+     *                           caches; PhpFrontend caches inject `.php` here so OPcache can
+     *                           ingest the file via `require_once`. The suffix is opaque to the
+     *                           hash — it is purely a filesystem concern.
+     */
     public function __construct(
         private readonly string $localPath,
+        private readonly string $fileSuffix = '',
     ) {
         if ('' === $localPath || '/' !== $localPath[0]) {
             throw new \InvalidArgumentException(\sprintf('EmptyDirPayloadStore.localPath must be an absolute path, got "%s"', $localPath));
+        }
+        if ('' !== $fileSuffix && 1 !== preg_match('/^\.[a-z0-9]{1,16}$/', $fileSuffix)) {
+            throw new \InvalidArgumentException(\sprintf('EmptyDirPayloadStore.fileSuffix must match /^\.[a-z0-9]{1,16}$/, got "%s"', $fileSuffix));
         }
     }
 
     public function pathFor(PayloadHash $hash): string
     {
-        return PayloadReference::build($this->localPath, $hash)->path;
+        return PayloadReference::build($this->localPath, $hash)->path . $this->fileSuffix;
     }
 
     public function exists(PayloadHash $hash): bool
@@ -62,6 +73,7 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
     public function write(PayloadHash $hash, string $bytes): void
     {
         $reference = PayloadReference::build($this->localPath, $hash);
+        $targetPath = $reference->path . $this->fileSuffix;
         $directory = $reference->directory();
 
         // Defense-in-depth against symlink-attack: if the shard directory
@@ -75,8 +87,8 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
         if (!is_dir($directory) && !@mkdir($directory, 0o750, true) && !is_dir($directory)) {
             throw new LocalStoreWriteException(\sprintf('failed to create shard directory %s', basename($directory)));
         }
-        if (is_link($reference->path)) {
-            throw new LocalStoreWriteException(\sprintf('target path is a symlink and refused: %s', basename($reference->path)));
+        if (is_link($targetPath)) {
+            throw new LocalStoreWriteException(\sprintf('target path is a symlink and refused: %s', basename($targetPath)));
         }
 
         $tmp = @tempnam($directory, '.cfb.tmp.');
@@ -89,7 +101,7 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
             throw new LocalStoreWriteException(\sprintf('partial write: %d of %d bytes', (int) $written, \strlen($bytes)));
         }
         @chmod($tmp, 0o640);
-        if (!@rename($tmp, $reference->path)) {
+        if (!@rename($tmp, $targetPath)) {
             @unlink($tmp);
             throw new LocalStoreWriteException(\sprintf('atomic rename failed for hash %s', $hash->prefix(12)));
         }
@@ -130,12 +142,20 @@ final class EmptyDirPayloadStore implements LocalPayloadStorePort
                 \FilesystemIterator::SKIP_DOTS,
             ),
         );
+        $expectedSuffix = $this->fileSuffix;
+        $suffixLen = \strlen($expectedSuffix);
         $hexPattern = '/^[a-f0-9]{64}$/';
         foreach ($iterator as $file) {
             if (!$file instanceof \SplFileInfo || !$file->isFile()) {
                 continue;
             }
             $name = $file->getFilename();
+            if ('' !== $expectedSuffix) {
+                if (!str_ends_with($name, $expectedSuffix)) {
+                    continue;
+                }
+                $name = substr($name, 0, -$suffixLen);
+            }
             if (1 !== preg_match($hexPattern, $name)) {
                 continue;
             }

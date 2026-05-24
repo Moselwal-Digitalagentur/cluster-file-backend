@@ -50,18 +50,19 @@ final class FlushDuringWriteRaceTest extends TestCase
         $this->writer = new WriteCacheEntry(
             metadataCache: $this->cache,
             localStore: $this->local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
             hasher: new ComputePayloadHash(),
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
         $this->reader = new ReadCacheEntry(
             metadataCache: $this->cache,
             localStore: $this->local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
         );

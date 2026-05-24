@@ -21,7 +21,9 @@ use Moselwal\Typo3ClusterCache\Domain\Contract\MetricsPort;
 use Moselwal\Typo3ClusterCache\Domain\Enum\EnvironmentName;
 use Moselwal\Typo3ClusterCache\Domain\Model\BackendVersion;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheIdentifier;
+use Moselwal\Typo3ClusterCache\Domain\Model\CacheMetadata;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
+use Moselwal\Typo3ClusterCache\Domain\Model\CompressionAlgo;
 use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
 use Moselwal\Typo3ClusterCache\Domain\Model\SerializerName;
 use Moselwal\Typo3ClusterCache\Domain\Model\TagSet;
@@ -35,19 +37,22 @@ use Moselwal\Typo3ClusterCache\Infrastructure\Time\SystemClock;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use TYPO3\CMS\Core\Cache\Backend\AbstractBackend;
+use TYPO3\CMS\Core\Cache\Backend\PhpCapableBackendInterface;
 use TYPO3\CMS\Core\Cache\Backend\TaggableBackendInterface;
 use TYPO3\CMS\Core\Cache\CacheManager;
 use TYPO3\CMS\Core\Cache\Exception;
 use TYPO3\CMS\Core\Cache\Exception\InvalidCacheException;
 use TYPO3\CMS\Core\Cache\Exception\InvalidDataException;
 use TYPO3\CMS\Core\Cache\Frontend\FrontendInterface;
+use TYPO3\CMS\Core\Cache\Frontend\PhpFrontend;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
  * Cluster-aware TYPO3 cache backend without a shared filesystem.
  *
  * Drop-in replacement for {@see \TYPO3\CMS\Core\Cache\Backend\FileBackend} and
- * {@see \TYPO3\CMS\Core\Cache\Backend\SimpleFileBackend}.
+ * {@see \TYPO3\CMS\Core\Cache\Backend\SimpleFileBackend}, including their
+ * PhpFrontend-capable use as code caches (`typoscript`, `fluid_template`).
  *
  * Architecture:
  * - **Source of truth**: a separate TYPO3 cache frontend, referenced via the
@@ -60,7 +65,7 @@ use TYPO3\CMS\Core\Utility\GeneralUtility;
  * This package does NOT know anything about Redis/Valkey directly — all
  * cluster semantics are routed through the TYPO3 cache API.
  */
-final class ClusterFileBackend extends AbstractBackend implements TaggableBackendInterface
+final class ClusterFileBackend extends AbstractBackend implements TaggableBackendInterface, PhpCapableBackendInterface
 {
     /**
      * Lifecycle note: the cache name is unknown at construction time —
@@ -71,7 +76,9 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
      * `readonly`. They are wired twice: once with a placeholder namespace
      * in the constructor (so the backend is usable before TYPO3 binds it
      * to a cache, e.g. in tests) and once with the real cache name in
-     * `setCache()`.
+     * `setCache()`. `$localStore`, `$compressionName`, `$isPhpCache` are
+     * for the same reason mutable — `setCache()` flips PhpFrontend mode on
+     * if necessary.
      */
     private CacheNamespace $namespace;
     private readonly EnvironmentName $environment;
@@ -80,14 +87,17 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private readonly string $metadataCacheIdentifier;
     private readonly int $cfbDefaultLifetime;
     private readonly int $maxPayloadBytes;
+    private readonly int $minCompressedBytes;
     private readonly FrontendInterface $metadataCacheFrontend;
-    private readonly EmptyDirPayloadStore $localStore;
-    private readonly CompressorPort $compressor;
+    private EmptyDirPayloadStore $localStore;
+    /** @var array<string, CompressorPort> Lookup CompressionAlgo->value → codec */
+    private readonly array $compressorsByAlgo;
     private readonly ClockPort $clock;
     private readonly SerializerName $serializer;
-    private readonly CompressionName $compressionName;
+    private CompressionName $compressionName;
     private readonly BackendVersion $backendVersion;
     private readonly MetricsPort $metrics;
+    private bool $isPhpCache = false;
     private MetadataCachePort $metadataCache;
     private WriteCacheEntry $writer;
     private ReadCacheEntry $reader;
@@ -97,6 +107,20 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private RunGarbageCollection $gcRunner;
     private readonly LoggerInterface $cfbLogger;
     private bool $collectGarbageDelegated = false;
+
+    /**
+     * Request-scoped L1 memoization for `MetadataCachePort::get()` results.
+     * In FrankenPHP worker mode TYPO3 re-bootstraps per request (see
+     * `Moselwal\FrankenPHP\Runtime\FrontendWorker::handleRequest()`), so a
+     * fresh CacheManager and a fresh backend instance is created on every
+     * request — this map is automatically request-scoped, no shutdown hook
+     * needed. Map: cache-identifier value → CacheMetadata|null|false where
+     * `false` is the explicit "not-yet-looked-up" sentinel and `null` means
+     * "looked up, was a miss".
+     *
+     * @var array<string, CacheMetadata|false|null>
+     */
+    private array $metadataL1 = [];
 
     /**
      * @param array<string, mixed> $options
@@ -120,6 +144,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->metadataCacheIdentifier = (string) $normalized['metadataCacheIdentifier'];
         $this->cfbDefaultLifetime = (int) $normalized['defaultLifetimeSeconds'];
         $this->maxPayloadBytes = (int) $normalized['maxPayloadBytes'];
+        $this->minCompressedBytes = (int) $normalized['minCompressedBytes'];
         $this->cfbLogger = $this->logger ?? new NullLogger();
 
         // Bootstrap-safe port resolution: the `assets` cache (and any cache
@@ -145,8 +170,19 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->namespace = new CacheNamespace($this->environment, $this->instance, 'unbound');
 
         $this->serializer = $this->resolveSerializer((string) $normalized['serializer']);
-        $this->compressor = $this->resolveCompressor((string) $normalized['compression']);
-        $this->compressionName = CompressionName::fromString($this->compressor->name());
+        $primary = $this->resolveCompressor((string) $normalized['compression']);
+        $this->compressionName = CompressionName::fromString($primary->name());
+        // Register every codec so the reader can decompress whatever marker
+        // it finds on disk, even after a compression-option change on a
+        // running namespace (e.g. operator switches `zstd` → `gzip`; both
+        // codecs must still be able to read pre-switch payloads until they
+        // are GC'd). The skip-compress path always needs NullCompressor.
+        $byAlgo = [
+            CompressionAlgo::None->value => $primary instanceof NullCompressor ? $primary : new NullCompressor(),
+        ];
+        $byAlgo[CompressionAlgo::Gzip->value] = $primary instanceof GzipCompressor ? $primary : new GzipCompressor();
+        $byAlgo[CompressionAlgo::Zstd->value] = $primary instanceof ZstdCompressor ? $primary : new ZstdCompressor();
+        $this->compressorsByAlgo = $byAlgo;
         $this->backendVersion = BackendVersion::fromEnv((string) $normalized['backendVersionEnvVar']);
 
         $this->localStore = new EmptyDirPayloadStore($this->localPath);
@@ -155,8 +191,10 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
 
     /**
      * (Re-)builds every service whose behaviour depends on the current
-     * `$this->namespace`. Called from the constructor (with placeholder
-     * namespace) and from `setCache()` (with the real cache name).
+     * `$this->namespace` or `$this->localStore`. Called from the constructor
+     * (with placeholder namespace) and from `setCache()` (with the real
+     * cache name and, for PhpFrontend caches, a `.php`-suffixed local
+     * store).
      */
     private function wireNamespaceBoundServices(): void
     {
@@ -167,18 +205,19 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->writer = new WriteCacheEntry(
             metadataCache: $this->metadataCache,
             localStore: $this->localStore,
-            compressor: $this->compressor,
+            compressorsByAlgo: $this->compressorsByAlgo,
             clock: $this->clock,
             metrics: $this->metrics,
             hasher: new ComputePayloadHash(),
             serializer: $this->serializer,
             compression: $this->compressionName,
             backendVersion: $this->backendVersion,
+            minCompressedBytes: $this->minCompressedBytes,
         );
         $this->reader = new ReadCacheEntry(
             metadataCache: $this->metadataCache,
             localStore: $this->localStore,
-            compressor: $this->compressor,
+            compressorsByAlgo: $this->compressorsByAlgo,
             clock: $this->clock,
             metrics: $this->metrics,
             maxDecompressedBytes: $this->maxPayloadBytes,
@@ -225,12 +264,38 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             $this->instance,
             $cache->getIdentifier(),
         );
+
+        // PhpFrontend caches eval their payload as PHP code via require_once.
+        // That demands two configuration changes for the lifetime of this
+        // backend instance: compression off (otherwise the file is not a
+        // valid PHP source), and a `.php` filename suffix (otherwise PHP's
+        // OPcache does not ingest the file). We force both here — the
+        // user-configured `compression` option is ignored for PhpFrontend
+        // caches, by design.
+        $isPhp = $cache instanceof PhpFrontend;
+        if ($isPhp !== $this->isPhpCache) {
+            $this->isPhpCache = $isPhp;
+            if ($isPhp) {
+                $this->localStore = new EmptyDirPayloadStore($this->localPath, '.php');
+                $this->compressionName = CompressionName::none();
+            } else {
+                $this->localStore = new EmptyDirPayloadStore($this->localPath);
+                // Compression returns to whatever was configured by options.
+                // We do not stash that name on the instance because the
+                // current arrangement is "configured-once-per-cache" — a
+                // backend would never flip back from PhpFrontend to
+                // VariableFrontend in practice.
+                $this->compressionName = CompressionName::fromString($this->primaryCodec()->name());
+            }
+        }
+
         // Rebuild the namespace-bound services so that the metadata cache
         // (and everything that depends on it) writes tags namespaced to
         // this specific cache name. Without this re-wire, all
         // ClusterFileBackend instances would share the same tag space in
         // the underlying metadata-cache frontend.
         $this->wireNamespaceBoundServices();
+        $this->metadataL1 = [];
     }
 
     /**
@@ -254,6 +319,12 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         };
         try {
             $this->writer->execute($this->namespace, $identifier, $data, $tagSet, $lifetimeSeconds);
+            // Invalidate L1 — the next has()/get() should fetch the fresh
+            // metadata. We do not eagerly populate L1 with the new entry
+            // because the metadata write goes through the configured cache
+            // frontend's serialisation layer, and reconstructing the exact
+            // post-roundtrip metadata payload here would duplicate logic.
+            unset($this->metadataL1[$identifier->value]);
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::set failed', [
                 'cacheName' => $this->namespace->cacheName,
@@ -291,18 +362,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     public function has(string $entryIdentifier): bool
     {
         $identifier = new CacheIdentifier($entryIdentifier);
-        try {
-            $metadata = $this->metadataCache->get($identifier);
-        } catch (\Throwable $e) {
-            $this->cfbLogger->error('ClusterFileBackend::has failed', [
-                'cacheName' => $this->namespace->cacheName,
-                'identifierDigest' => $this->hashIdentifierForLog($identifier),
-                'exceptionClass' => $e::class,
-                'exceptionMessage' => $e->getMessage(),
-            ]);
-
-            return false;
-        }
+        $metadata = $this->loadMetadata($identifier);
         if (null === $metadata) {
             return false;
         }
@@ -315,7 +375,10 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     {
         $identifier = new CacheIdentifier($entryIdentifier);
         try {
-            return $this->remover->execute($identifier);
+            $result = $this->remover->execute($identifier);
+            unset($this->metadataL1[$identifier->value]);
+
+            return $result;
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::remove failed', [
                 'cacheName' => $this->namespace->cacheName,
@@ -331,16 +394,23 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     public function flush(): void
     {
         $this->namespaceFlusher->execute($this->namespace);
+        $this->metadataL1 = [];
     }
 
     public function flushByTag(string $tag): void
     {
         $this->tagFlusher->execute($this->namespace, $tag);
+        // The tag-to-identifier mapping lives in the metadata cache, not in
+        // L1. Cheapest correct option is to drop the whole L1 — the next
+        // request will refill it lazily. Selective invalidation would mean
+        // walking every L1 entry's tags, which negates the speedup.
+        $this->metadataL1 = [];
     }
 
     public function flushByTags(array $tags): void
     {
         $this->tagFlusher->executeMany($this->namespace, array_values(array_map('strval', $tags)));
+        $this->metadataL1 = [];
     }
 
     /**
@@ -358,6 +428,86 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         }
         $this->collectGarbageDelegated = true;
         $this->gcRunner->execute($this->namespace);
+    }
+
+    /**
+     * Eval-or-load a PhpFrontend cache entry. Sources the payload from the
+     * pod-local store after a metadata lookup, so the cluster-coherent
+     * invalidation contract is preserved — the metadata read sees flushes
+     * from other pods. If the local file is missing, return false so the
+     * TYPO3 frontend triggers a caller rebuild via `set()`.
+     *
+     * `require_once` is used by deliberate design over `eval`: PHP's
+     * OPcache caches require-included files automatically (compilation
+     * once per pod for the lifetime of the file), whereas `eval`'d code is
+     * recompiled on every call.
+     */
+    public function requireOnce(string $entryIdentifier): mixed
+    {
+        return $this->doRequire($entryIdentifier, true);
+    }
+
+    public function require(string $entryIdentifier): mixed
+    {
+        return $this->doRequire($entryIdentifier, false);
+    }
+
+    private function doRequire(string $entryIdentifier, bool $once): mixed
+    {
+        $identifier = new CacheIdentifier($entryIdentifier);
+        $metadata = $this->loadMetadata($identifier);
+        if (null === $metadata) {
+            return false;
+        }
+        if (!$metadata->state->isValid() || $metadata->lifetime->isExpired($this->clock->now())) {
+            return false;
+        }
+        $path = $this->localStore->pathFor($metadata->hash);
+        if (!is_file($path)) {
+            // Blob-miss: file is not pod-locally materialised yet. The
+            // TYPO3 PhpFrontend contract returns false to signal "rebuild
+            // me"; the caller will then `set()` the payload, which writes
+            // the local file on this pod. Subsequent requireOnce() finds
+            // the file and OPcache caches it.
+            return false;
+        }
+
+        return $once ? require_once $path : require $path;
+    }
+
+    /**
+     * Memoised wrapper around `MetadataCachePort::get()`. Hits are returned
+     * from RAM (~0.5 µs); misses round-trip to the metadata cache once per
+     * identifier per request. Negative results (no-entry) are cached too,
+     * to avoid repeating the round-trip on `has('foo'); has('foo'); …` in
+     * the same request — which `Has` patterns in TypoScript template
+     * resolution and Fluid rendering commonly do.
+     */
+    private function loadMetadata(CacheIdentifier $identifier): ?CacheMetadata
+    {
+        $key = $identifier->value;
+        if (\array_key_exists($key, $this->metadataL1)) {
+            $cached = $this->metadataL1[$key];
+
+            return false === $cached ? null : $cached;
+        }
+        try {
+            $metadata = $this->metadataCache->get($identifier);
+        } catch (\Throwable $e) {
+            $this->cfbLogger->error('ClusterFileBackend::loadMetadata failed', [
+                'cacheName' => $this->namespace->cacheName,
+                'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                'exceptionClass' => $e::class,
+                'exceptionMessage' => $e->getMessage(),
+            ]);
+
+            // Do not poison L1 with the error — on transient metadata
+            // backend failure (Redis blip) the next call should re-try.
+            return null;
+        }
+        $this->metadataL1[$key] = $metadata ?? false;
+
+        return $metadata;
     }
 
     /**
@@ -450,5 +600,17 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         );
 
         return new GzipCompressor();
+    }
+
+    /**
+     * Returns the configured "primary" codec used for VariableFrontend
+     * caches. Used by {@see setCache()} when the backend leaves PhpFrontend
+     * mode again (a theoretical edge case — see the comment there).
+     */
+    private function primaryCodec(): CompressorPort
+    {
+        return $this->compressorsByAlgo[CompressionAlgo::Zstd->value]->isAvailable()
+            ? $this->compressorsByAlgo[CompressionAlgo::Zstd->value]
+            : $this->compressorsByAlgo[CompressionAlgo::Gzip->value];
     }
 }

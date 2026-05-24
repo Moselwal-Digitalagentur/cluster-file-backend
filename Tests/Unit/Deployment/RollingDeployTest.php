@@ -47,25 +47,26 @@ final class RollingDeployTest extends TestCase
         $writerA = new WriteCacheEntry(
             metadataCache: $sharedCache,
             localStore: $podALocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
             hasher: $hasher,
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
         $readerA = new ReadCacheEntry(
             metadataCache: $sharedCache,
             localStore: $podALocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
         );
         $readerB = new ReadCacheEntry(
             metadataCache: $sharedCache,
             localStore: $podBLocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
         );
@@ -94,13 +95,14 @@ final class RollingDeployTest extends TestCase
         $build = fn(InMemoryLocalPayloadStore $store): WriteCacheEntry => new WriteCacheEntry(
             metadataCache: $sharedCache,
             localStore: $store,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
             hasher: $hasher,
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
 
         $writerA = $build($podALocal);
@@ -108,7 +110,7 @@ final class RollingDeployTest extends TestCase
         $readerB = new ReadCacheEntry(
             metadataCache: $sharedCache,
             localStore: $podBLocal,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
         );

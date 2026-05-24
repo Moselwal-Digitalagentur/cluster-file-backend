@@ -52,6 +52,13 @@
             "maximum": 1073741824,
             "default": 10485760
         },
+        "minCompressedBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1048576,
+            "default": 1024,
+            "description": "Payloads smaller than this size are stored uncompressed on disk (a one-byte marker indicates the on-disk codec). Skip-compress avoids the gzdeflate/zstd_compress fixed cost on tiny values like rootline or hash entries. Set to 0 to always compress."
+        },
         "backendVersionEnvVar": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]{0,63}$",

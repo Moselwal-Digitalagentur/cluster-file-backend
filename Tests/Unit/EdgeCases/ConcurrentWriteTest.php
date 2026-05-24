@@ -68,13 +68,14 @@ final class ConcurrentWriteTest extends TestCase
         $build = fn(InMemoryLocalPayloadStore $store): WriteCacheEntry => new WriteCacheEntry(
             metadataCache: $this->sharedMetadata,
             localStore: $store,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $this->metrics,
             hasher: $hasher,
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
         $this->podAWriter = $build($this->podALocal);
         $this->podBWriter = $build($this->podBLocal);
@@ -82,7 +83,7 @@ final class ConcurrentWriteTest extends TestCase
         $buildReader = fn(InMemoryLocalPayloadStore $store): ReadCacheEntry => new ReadCacheEntry(
             metadataCache: $this->sharedMetadata,
             localStore: $store,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $this->metrics,
         );

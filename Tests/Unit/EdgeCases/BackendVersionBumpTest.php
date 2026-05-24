@@ -45,13 +45,14 @@ final class BackendVersionBumpTest extends TestCase
         $writerV1 = new WriteCacheEntry(
             metadataCache: $kv,
             localStore: $local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
             hasher: $hasher,
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(1),
+            minCompressedBytes: 0,
         );
         $writerV1->execute($namespace, $id, 'payload', new TagSet(), 3600);
 
@@ -59,19 +60,20 @@ final class BackendVersionBumpTest extends TestCase
         $writerV2 = new WriteCacheEntry(
             metadataCache: $kv,
             localStore: $local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
             hasher: $hasher,
             serializer: SerializerName::phpNative(),
             compression: CompressionName::none(),
             backendVersion: new BackendVersion(2),
+            minCompressedBytes: 0,
         );
 
         $reader = new ReadCacheEntry(
             metadataCache: $kv,
             localStore: $local,
-            compressor: $compressor,
+            compressorsByAlgo: \Moselwal\Typo3ClusterCache\Tests\Support\CodecRegistry::single($compressor),
             clock: $clock,
             metrics: $metrics,
         );
