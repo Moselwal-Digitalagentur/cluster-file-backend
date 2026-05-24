@@ -1,6 +1,6 @@
 <?php
 
-// SPDX-FileCopyrightText: 2026 Moselwal GmbH
+// SPDX-FileCopyrightText: 2026 Moselwal Digitalagentur GmbH
 // SPDX-License-Identifier: MIT
 
 declare(strict_types=1);
@@ -27,6 +27,7 @@ use Moselwal\Typo3ClusterCache\Domain\Model\CompressionAlgo;
 use Moselwal\Typo3ClusterCache\Domain\Model\CompressionName;
 use Moselwal\Typo3ClusterCache\Domain\Model\SerializerName;
 use Moselwal\Typo3ClusterCache\Domain\Model\TagSet;
+use Moselwal\Typo3ClusterCache\Infrastructure\Cache\PayloadL1Cache;
 use Moselwal\Typo3ClusterCache\Infrastructure\Cache\Typo3MetadataCache;
 use Moselwal\Typo3ClusterCache\Infrastructure\Compression\GzipCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\Compression\NullCompressor;
@@ -88,6 +89,8 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private readonly int $cfbDefaultLifetime;
     private readonly int $maxPayloadBytes;
     private readonly int $minCompressedBytes;
+    private readonly int $payloadL1MaxEntries;
+    private readonly int $payloadL1MaxBytes;
     private readonly FrontendInterface $metadataCacheFrontend;
     private EmptyDirPayloadStore $localStore;
     /** @var array<string, CompressorPort> Lookup CompressionAlgo->value → codec */
@@ -123,6 +126,18 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private array $metadataL1 = [];
 
     /**
+     * Request-scoped L1 memoization of fully decoded payloads. See
+     * {@see PayloadL1Cache} for the eviction policy.
+     *
+     * Disabled on PhpFrontend caches — `requireOnce()` is served via the
+     * `.php`-suffixed local file plus OPcache, the most efficient
+     * in-memory form of a PHP-code cache. A redundant byte-copy here
+     * would only burn RAM.
+     */
+    private PayloadL1Cache $payloadL1;
+    private bool $skipPayloadL1 = false;
+
+    /**
      * @param array<string, mixed> $options
      */
     public function __construct(array $options = [])
@@ -145,6 +160,9 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->cfbDefaultLifetime = (int) $normalized['defaultLifetimeSeconds'];
         $this->maxPayloadBytes = (int) $normalized['maxPayloadBytes'];
         $this->minCompressedBytes = (int) $normalized['minCompressedBytes'];
+        $this->payloadL1MaxEntries = (int) $normalized['payloadL1MaxEntries'];
+        $this->payloadL1MaxBytes = (int) $normalized['payloadL1MaxBytes'];
+        $this->payloadL1 = new PayloadL1Cache($this->payloadL1MaxEntries, $this->payloadL1MaxBytes);
         $this->cfbLogger = $this->logger ?? new NullLogger();
 
         // Bootstrap-safe port resolution: the `assets` cache (and any cache
@@ -288,6 +306,10 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
                 $this->compressionName = CompressionName::fromString($this->primaryCodec()->name());
             }
         }
+        // PhpFrontend already has OPcache as its in-memory representation
+        // — a redundant payload L1 would just burn RAM. VariableFrontend
+        // caches benefit from the L1 directly (get-hot paths).
+        $this->skipPayloadL1 = $isPhp || 0 === $this->payloadL1MaxEntries;
 
         // Rebuild the namespace-bound services so that the metadata cache
         // (and everything that depends on it) writes tags namespaced to
@@ -296,6 +318,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         // the underlying metadata-cache frontend.
         $this->wireNamespaceBoundServices();
         $this->metadataL1 = [];
+        $this->payloadL1->clear();
     }
 
     /**
@@ -319,12 +342,17 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         };
         try {
             $this->writer->execute($this->namespace, $identifier, $data, $tagSet, $lifetimeSeconds);
-            // Invalidate L1 — the next has()/get() should fetch the fresh
-            // metadata. We do not eagerly populate L1 with the new entry
-            // because the metadata write goes through the configured cache
-            // frontend's serialisation layer, and reconstructing the exact
-            // post-roundtrip metadata payload here would duplicate logic.
+            // Invalidate metadata L1 — the next has()/get() must fetch the
+            // fresh metadata roundtrip; we cannot reconstruct the exact
+            // post-serialisation CacheMetadata cheaply here.
+            // The payload L1 we DO populate eagerly: the raw $data we just
+            // wrote is exactly what get() would return, no decompression
+            // needed. Subsequent get()s in the same request hit L1 and
+            // skip both the metadata roundtrip AND the disk read.
             unset($this->metadataL1[$identifier->value]);
+            if (!$this->skipPayloadL1) {
+                $this->payloadL1->put($identifier->value, $data);
+            }
         } catch (\Throwable $e) {
             $this->cfbLogger->error('ClusterFileBackend::set failed', [
                 'cacheName' => $this->namespace->cacheName,
@@ -343,6 +371,21 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     public function get(string $entryIdentifier): mixed
     {
         $identifier = new CacheIdentifier($entryIdentifier);
+
+        // L1 hot-path: the entry is already decompressed in RAM. Skip the
+        // metadata roundtrip + disk read + decompress entirely.
+        if (!$this->skipPayloadL1) {
+            $hit = $this->payloadL1->get($identifier->value);
+            if (null !== $hit) {
+                $this->metrics->counter('cache_l1_hit_total', [
+                    'cacheName' => $this->namespace->cacheName,
+                    'namespace' => $this->namespace->toKvKeyPrefix(),
+                ]);
+
+                return $hit;
+            }
+        }
+
         try {
             $result = $this->reader->execute($this->namespace, $identifier);
         } catch (\Throwable $e) {
@@ -354,6 +397,10 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             ]);
 
             return false;
+        }
+
+        if (null !== $result && !$this->skipPayloadL1) {
+            $this->payloadL1->put($identifier->value, $result);
         }
 
         return $result ?? false;
@@ -377,6 +424,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         try {
             $result = $this->remover->execute($identifier);
             unset($this->metadataL1[$identifier->value]);
+            $this->payloadL1->forget($identifier->value);
 
             return $result;
         } catch (\Throwable $e) {
@@ -395,6 +443,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     {
         $this->namespaceFlusher->execute($this->namespace);
         $this->metadataL1 = [];
+        $this->payloadL1->clear();
     }
 
     public function flushByTag(string $tag): void
@@ -405,12 +454,14 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         // request will refill it lazily. Selective invalidation would mean
         // walking every L1 entry's tags, which negates the speedup.
         $this->metadataL1 = [];
+        $this->payloadL1->clear();
     }
 
     public function flushByTags(array $tags): void
     {
         $this->tagFlusher->executeMany($this->namespace, array_values(array_map('strval', $tags)));
         $this->metadataL1 = [];
+        $this->payloadL1->clear();
     }
 
     /**

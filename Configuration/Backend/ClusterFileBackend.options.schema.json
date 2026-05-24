@@ -59,6 +59,20 @@
             "default": 1024,
             "description": "Payloads smaller than this size are stored uncompressed on disk (a one-byte marker indicates the on-disk codec). Skip-compress avoids the gzdeflate/zstd_compress fixed cost on tiny values like rootline or hash entries. Set to 0 to always compress."
         },
+        "payloadL1MaxEntries": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1024,
+            "default": 32,
+            "description": "Maximum number of decompressed payloads kept in the per-request in-memory L1 cache. 0 disables payload memoization (only the metadata-L1 stays active). The L1 is request-scoped — FrankenPHP creates a fresh backend instance per request, so this cap applies per request, not globally. Hot caches like extbase's ClassSchemata typically need only a handful of entries; raise this when a cache has many hot identifiers (Fluid template carousel, partials)."
+        },
+        "payloadL1MaxBytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 67108864,
+            "default": 4194304,
+            "description": "Soft memory budget for the payload L1 in bytes (default 4 MB). Entries that would push the total above this are evicted in insertion order. A single payload larger than this limit bypasses the L1 entirely (rather than evicting everything else). 0 disables the bytes-cap; the entry count then becomes the only limit."
+        },
         "backendVersionEnvVar": {
             "type": "string",
             "pattern": "^[A-Z_][A-Z0-9_]{0,63}$",
