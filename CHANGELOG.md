@@ -4,6 +4,140 @@ Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
 Das Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 die Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [2.3.2] - 2026-05-24
+
+### Fixed
+
+- **CRITICAL: PhpFrontend-Files dürfen keine Bytes vor `<?php` haben.**
+  Der seit v2.2.0 eingeführte 1-Byte-Marker (`CompressionAlgo::None`
+  prefix `\x00`) wurde fälschlich auch auf PhpFrontend-Files (typoscript,
+  fluid_template) geschrieben. `require_once` echo'd den NUL-Byte als
+  raw output vor dem PHP-Code, Content-Length stimmte nicht mehr, Caddy
+  brach den HTTP/2-Stream mit "server replied with more than declared
+  Content-Length; truncated" ab → `ERR_HTTP2_PROTOCOL_ERROR 200 (OK)`
+  auf jedem BE-Asset/AJAX-Endpoint → BE-UI rendert leer (nur
+  Module-Navigation sichtbar).
+- **`doRequire` differenziert Integrity vs Transient.** v2.3.1 markierte
+  bei jeder Exception in `readVerified()` den Metadata-Entry als
+  `CacheState::Broken` — auch bei transienter `PayloadNotFoundException`
+  (Race zwischen `is_file()` und `file_get_contents()` während paralleler
+  Cache-Writes auf Cluster-Boot). Permanente Cache-Miss-Schleife. Jetzt:
+  nur echte `PayloadIntegrityException` (sha256-mismatch) triggert
+  broken-state; `PayloadNotFoundException` ist transient und konvergiert
+  nach 1 Rebuild-Cycle.
+
+### Added
+
+- `$bareBytes` flag auf `WriteCacheEntry` + `ReadCacheEntry`. Default
+  `false` (VariableFrontend-Verhalten unverändert). PhpFrontend-Caches
+  setzen es auf `true` über `ClusterFileBackend::setCache()`. Im
+  bare-Modus wird kein Marker geschrieben/gelesen — die Bytes auf Disk
+  sind exakt das was `require_once` parsen soll.
+- Regression-Test `PhpFrontendNoBytePrefixTest` der per
+  `output_buffering` prüft dass `require_once` kein Output vor dem
+  PHP-Code-Result emittiert.
+
+## [2.3.1] - 2026-05-24
+
+### Fixed
+
+- **CRITICAL: `BackendVersion::fromString()` foldet jetzt
+  `BackendVersionInfo::CURRENT`.** Vor diesem Fix wurde nur das Deploy-
+  Identifier-Argument (`IMAGE_TAG`) per crc32 gefoldet; das `CURRENT`-
+  Constant — das dokumentiert Format-Bumps invalidieren soll — floss
+  nicht in den Hash ein, sobald `IMAGE_TAG` gesetzt war.
+- **`doRequire()` Symlink-Defense + sha256-Verify-once-per-hash**
+  (SEC-HIGH). Path geht durch `is_link()` bei jedem Call;
+  sha256-Integrity wird einmal pro Hash pro Request via
+  `readVerified()` geprüft, danach hit OPcache direct (87–98×
+  hot/cold-Ratio).
+- **`maxPayloadBytes` Schema-Cap 1 GiB → 64 MiB** (SEC-HIGH).
+  zstd-Bomb-DoS-Vektor entschärft.
+- **`flush()` / `flushByTag()` / `flushByTags()`** mit try/catch + log
+  + Metrics-Counter (`cache_flush_error_total`). Valkey-Blip bricht
+  jetzt nicht mehr den BE-Save-Flow.
+- **`has()` emittiert `cache_miss_total{reason=metadata-error}`** auf
+  Metadata-Backend-Failure (vorher unsichtbar in Prometheus).
+
+## [2.3.0] - 2026-05-24
+
+### Added
+
+- **Request-scoped Payload-L1-Cache** (`Infrastructure/Cache/PayloadL1Cache`).
+  LRU via PHP-Array-Insertion-Order, dual-cap via `payloadL1MaxEntries`
+  (Default 32) + `payloadL1MaxBytes` (Default 4 MB). Oversize-Entries
+  bypassen den Cache. `set()` populiert L1 eagerly. PhpFrontend-Caches
+  skippen L1 (OPcache ist effizienter).
+- Counter `cache_l1_hit_total{cacheName,namespace}` für L1-Hit-Rate-
+  Monitoring.
+- Schema-Optionen `payloadL1MaxEntries` (max 1024) und
+  `payloadL1MaxBytes` (max 64 MiB).
+- 14 neue `PayloadL1CacheTest`-Unit-Tests.
+
+### Changed
+
+- `get()` L1-Hit-Latenz konstant ~0.47 µs unabhängig vom Payload —
+  **9–20× schneller als SimpleFileBackend** ohne Cluster-Coherence
+  aufzugeben.
+- Alle SPDX-Header von "Moselwal GmbH" auf "Moselwal Digitalagentur
+  GmbH" korrigiert (105 Files).
+
+## [2.2.0] - 2026-05-24
+
+### Added
+
+- **`implements PhpCapableBackendInterface`**. ClusterFileBackend ist
+  jetzt Drop-in für `typoscript` und `fluid_template`. `setCache()`
+  erkennt `PhpFrontend` und schaltet Compression off + `.php`-Suffix
+  am Local-Store an.
+- `requireOnce()` / `require()` mit OPcache-kohärentem
+  BackendVersion-Hash-Pfad.
+- One-byte CompressionAlgo-Marker am Payload-Anfang. (**Hinweis:** in
+  v2.3.2 für PhpFrontend wieder deaktiviert — der NUL-Byte leakte als
+  raw output vor `<?php`.)
+- Schema-Option `minCompressedBytes` (Default 1024) für skip-compress
+  bei kleinen Payloads.
+- **Request-scoped Metadata-L1-Cache** in `ClusterFileBackend`.
+  ~200× schneller bei repeated `has()`.
+
+### Changed
+
+- `BackendVersionInfo::CURRENT` 1 → 2 (pre-v2.2-Payloads invalidieren).
+
+## [2.1.0] - 2026-05-24
+
+### Added
+
+- `Infrastructure/GarbageCollect/BackendGarbageCollectRunner`.
+- `clusterfilebackend:gc` und `clusterfilebackend:warmup` CLI-Commands
+  wieder in Services.yaml registriert (lazy-resolve via CacheManager).
+
+## [2.0.5] - 2026-05-24
+
+### Fixed
+
+- `$this->namespace` wird vor `resolveCompressor()` initialisiert.
+
+## [2.0.4] - 2026-05-24
+
+### Fixed
+
+- Services.yaml registriert nur noch DI-managed Leaf-Services.
+
+## [2.0.3] - 2026-05-24
+
+### Fixed
+
+- `MetricsPort`/`ClockPort` werden via `resolvePortOrDefault()` mit
+  Fallback resolved (FailsafeContainer-Bootstrap-safe).
+
+## [2.0.2] - 2026-05-24
+
+### Fixed
+
+- Services.yaml schließt runtime-gebundene Adapter aus dem
+  autowired-Resource-Glob aus.
+
 ## [2.0.1] - 2026-05-21
 
 ### Removed
