@@ -69,8 +69,14 @@ final readonly class BackendVersion
     }
 
     /**
-     * Deterministically folds any non-empty string identifier into a
-     * BackendVersion. Same input → same version across all pods.
+     * Deterministically folds the deploy identifier together with the
+     * package-internal {@see BackendVersionInfo::CURRENT} constant into a
+     * BackendVersion. Same input → same version across all pods, but every
+     * bump of `CURRENT` (e.g. on-disk format change in a new package
+     * release) shifts the hash even when the deploy identifier is stable
+     * — which is the contract documented in `BackendVersionInfo`:
+     * pre-bump payloads on disk become unreachable, the reader never has
+     * to guess whether a payload follows the old or new format.
      */
     public static function fromString(string $deployIdentifier): self
     {
@@ -78,6 +84,6 @@ final readonly class BackendVersion
             throw new \InvalidArgumentException('BackendVersion::fromString requires a non-empty identifier');
         }
 
-        return new self(max(1, crc32($deployIdentifier)));
+        return new self(max(1, crc32(BackendVersionInfo::CURRENT . ':' . $deployIdentifier)));
     }
 }

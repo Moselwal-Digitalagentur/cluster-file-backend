@@ -49,8 +49,9 @@
         "maxPayloadBytes": {
             "type": "integer",
             "minimum": 1024,
-            "maximum": 1073741824,
-            "default": 10485760
+            "maximum": 67108864,
+            "default": 10485760,
+            "description": "Upper bound for both writes (rejected with InvalidDataException) and decompressed reads (zstd-bomb mitigation). Capped at 64 MiB by the schema: ext-zstd pre-allocates the full decompressed size before honouring the post-check, so a generous cap is a DoS vector — even a 50-byte malicious zstd stream can decompress to multiple gigabytes. If your workload legitimately stores entries larger than 64 MiB you almost certainly want a different cache architecture."
         },
         "minCompressedBytes": {
             "type": "integer",

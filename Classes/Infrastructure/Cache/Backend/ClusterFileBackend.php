@@ -138,6 +138,25 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private bool $skipPayloadL1 = false;
 
     /**
+     * Request-scoped set of PayloadHash digests that have passed a sha256
+     * integrity check in this request. Used by `doRequire()` to skip the
+     * file-read + sha256-rehash on subsequent `requireOnce` / `require`
+     * calls — OPcache already holds the compiled AST in worker RAM, so
+     * doing the integrity verify once per hash per request preserves the
+     * OPcache hot-path speedup (~1 µs) while still defending against:
+     *   - symlink-swap between writer and reader (the `is_link()` check
+     *     runs on every call, see `doRequire()` below)
+     *   - file-content tamper between two pods in a cluster (the metadata
+     *     cache's hash field is the source of truth; we verify the local
+     *     bytes against it once before trusting OPcache)
+     * Keys are the 64-char hex digest; values are `true`. Naturally
+     * request-scoped via FrankenPHP per-request bootstrap.
+     *
+     * @var array<string, true>
+     */
+    private array $verifiedPhpHashes = [];
+
+    /**
      * @param array<string, mixed> $options
      */
     public function __construct(array $options = [])
@@ -319,6 +338,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->wireNamespaceBoundServices();
         $this->metadataL1 = [];
         $this->payloadL1->clear();
+        $this->verifiedPhpHashes = [];
     }
 
     /**
@@ -441,27 +461,70 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
 
     public function flush(): void
     {
-        $this->namespaceFlusher->execute($this->namespace);
+        try {
+            $this->namespaceFlusher->execute($this->namespace);
+        } catch (\Throwable $e) {
+            $this->logFlushFailure('flush', $e);
+            // Fall through: L1 must still be cleared. A swallowed flush
+            // followed by stale L1 entries would be silently inconsistent
+            // — the metadata cache will reject expired entries on the next
+            // read either way, but our in-RAM copy could still hand them
+            // out, which is the worse failure mode.
+        }
         $this->metadataL1 = [];
         $this->payloadL1->clear();
+        $this->verifiedPhpHashes = [];
     }
 
     public function flushByTag(string $tag): void
     {
-        $this->tagFlusher->execute($this->namespace, $tag);
+        try {
+            $this->tagFlusher->execute($this->namespace, $tag);
+        } catch (\Throwable $e) {
+            $this->logFlushFailure('flushByTag', $e);
+        }
         // The tag-to-identifier mapping lives in the metadata cache, not in
         // L1. Cheapest correct option is to drop the whole L1 — the next
         // request will refill it lazily. Selective invalidation would mean
         // walking every L1 entry's tags, which negates the speedup.
         $this->metadataL1 = [];
         $this->payloadL1->clear();
+        $this->verifiedPhpHashes = [];
     }
 
     public function flushByTags(array $tags): void
     {
-        $this->tagFlusher->executeMany($this->namespace, array_values(array_map('strval', $tags)));
+        try {
+            $this->tagFlusher->executeMany($this->namespace, array_values(array_map('strval', $tags)));
+        } catch (\Throwable $e) {
+            $this->logFlushFailure('flushByTags', $e);
+        }
         $this->metadataL1 = [];
         $this->payloadL1->clear();
+        $this->verifiedPhpHashes = [];
+    }
+
+    /**
+     * Flushes are typically called from synchronous BE workflows
+     * (`DataHandler` after a record save, `cache:flush` CLI) where the
+     * caller cannot meaningfully recover from a metadata-cache outage.
+     * Surfacing the raw `\Throwable` from here would break the BE save
+     * flow at exactly the moment the editor expects the new state to land.
+     * We log structured + emit a metric and continue — the next read will
+     * still detect the stale entries via expiry / hash mismatch.
+     */
+    private function logFlushFailure(string $op, \Throwable $e): void
+    {
+        $this->cfbLogger->error(\sprintf('ClusterFileBackend::%s failed', $op), [
+            'cacheName' => $this->namespace->cacheName,
+            'exceptionClass' => $e::class,
+            'exceptionMessage' => $e->getMessage(),
+        ]);
+        $this->metrics->counter('cache_flush_error_total', [
+            'cacheName' => $this->namespace->cacheName,
+            'namespace' => $this->namespace->toKvKeyPrefix(),
+            'op' => $op,
+        ]);
     }
 
     /**
@@ -523,7 +586,91 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             return false;
         }
 
+        // Defense-in-depth — always check, every call. The on-disk file
+        // could have been swapped for a symlink by a sidecar / compromised
+        // init container / world-writable misconfig between two
+        // requireOnce calls. `is_link()` is a single lstat, ~0.2 µs
+        // amortised; cheap enough to never skip.
+        if (is_link($path)) {
+            $this->cfbLogger->error('ClusterFileBackend::doRequire refused: payload path is a symlink', [
+                'cacheName' => $this->namespace->cacheName,
+                'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                'hashPrefix' => $metadata->hash->prefix(12),
+            ]);
+            $this->markBrokenForPath($metadata, $identifier);
+
+            return false;
+        }
+
+        // First-touch sha256 integrity verify per hash per request. After
+        // a successful verify, subsequent requireOnce on the same hash
+        // hits OPcache directly and skips the file-read entirely — the
+        // hot-path stays at ~1 µs (OPcache lookup + function-call) while
+        // a tamper between worker boot and the first read still gets
+        // caught.
+        $digest = $metadata->hash->digest;
+        if (!isset($this->verifiedPhpHashes[$digest])) {
+            try {
+                // readVerified() re-reads the file and re-hashes against
+                // the metadata-stored checksum. On mismatch, it deletes
+                // the local file and throws PayloadIntegrityException —
+                // we then surface the broken-state to the caller so
+                // TYPO3 triggers a rebuild via set().
+                $this->localStore->readVerified($metadata->hash, $metadata->checksum);
+            } catch (\Throwable $e) {
+                $this->cfbLogger->error('ClusterFileBackend::doRequire integrity check failed', [
+                    'cacheName' => $this->namespace->cacheName,
+                    'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                    'hashPrefix' => $metadata->hash->prefix(12),
+                    'exceptionClass' => $e::class,
+                    'exceptionMessage' => $e->getMessage(),
+                ]);
+                $this->markBrokenForPath($metadata, $identifier);
+
+                return false;
+            }
+            $this->verifiedPhpHashes[$digest] = true;
+        }
+
         return $once ? require_once $path : require $path;
+    }
+
+    /**
+     * On PhpFrontend integrity-failure (symlink or sha256-mismatch), flag
+     * the metadata entry as broken so the next read sees the broken-state
+     * and forces a caller rebuild via `set()`. Same recovery path the
+     * VariableFrontend reader uses; see `ReadCacheEntry::markBroken()`.
+     */
+    private function markBrokenForPath(CacheMetadata $metadata, CacheIdentifier $identifier): void
+    {
+        unset($this->metadataL1[$identifier->value], $this->verifiedPhpHashes[$metadata->hash->digest]);
+        $broken = new CacheMetadata(
+            identifier: $metadata->identifier,
+            hash: $metadata->hash,
+            checksum: $metadata->checksum,
+            lifetime: $metadata->lifetime,
+            serializer: $metadata->serializer,
+            compression: $metadata->compression,
+            payloadSize: $metadata->payloadSize,
+            tags: $metadata->tags,
+            state: \Moselwal\Typo3ClusterCache\Domain\Enum\CacheState::Broken,
+            backendVersion: $metadata->backendVersion,
+        );
+        try {
+            $this->metadataCache->set(
+                $identifier,
+                $broken,
+                $metadata->tags->toArray(),
+                max(60, $metadata->lifetime->remainingSeconds($this->clock->now())),
+            );
+        } catch (\Throwable) {
+            // Best-effort — the next read will re-detect the failure.
+        }
+        $this->metrics->counter('cache_miss_total', [
+            'cacheName' => $this->namespace->cacheName,
+            'namespace' => $this->namespace->toKvKeyPrefix(),
+            'reason' => 'broken',
+        ]);
     }
 
     /**
@@ -550,6 +697,17 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
                 'identifierDigest' => $this->hashIdentifierForLog($identifier),
                 'exceptionClass' => $e::class,
                 'exceptionMessage' => $e->getMessage(),
+            ]);
+            // Mirror the counter that ReadCacheEntry emits on the same
+            // failure, so `has()` outages are visible in Prometheus too.
+            // Without this, dashboards under-count by however much TYPO3
+            // reaches has() before falling through to get() — which is
+            // a lot, since `has()` is the typical "should I rebuild?"
+            // probe.
+            $this->metrics->counter('cache_miss_total', [
+                'cacheName' => $this->namespace->cacheName,
+                'namespace' => $this->namespace->toKvKeyPrefix(),
+                'reason' => 'metadata-error',
             ]);
 
             // Do not poison L1 with the error — on transient metadata

@@ -105,4 +105,31 @@ final class BackendVersionTest extends TestCase
         }
         self::assertStringContainsString('IMAGE', BackendVersion::DEFAULT_ENV_VAR);
     }
+
+    /**
+     * Regression: pre-v2.3.1 fromString() ignored BackendVersionInfo::CURRENT
+     * when the deploy identifier was set. Effect: bumping the CURRENT
+     * constant (the documented mechanism to invalidate older on-disk
+     * payloads, e.g. after a format change) had no effect in production
+     * environments that set IMAGE_TAG. This test pins the contract that
+     * CURRENT participates in the hash regardless of the deploy identifier.
+     */
+    public function testFromStringFoldsBackendVersionInfoCurrent(): void
+    {
+        // Same deploy identifier, but the test verifies the value depends
+        // on BackendVersionInfo::CURRENT by checking that the result
+        // matches the explicit "CURRENT + : + deploy" crc32 — not just
+        // crc32 of the deploy identifier on its own.
+        $deploy = 'v1.2.3';
+        $expected = max(1, crc32(BackendVersionInfo::CURRENT . ':' . $deploy));
+        self::assertSame($expected, BackendVersion::fromString($deploy)->value);
+
+        // Defense-in-depth: also verify it diverges from the legacy
+        // crc32($deploy) — otherwise a future regression that drops the
+        // CURRENT prefix would still pass the above assertion if both
+        // hashes happened to collide (vanishingly unlikely but
+        // explicit is better here).
+        $legacy = max(1, crc32($deploy));
+        self::assertNotSame($legacy, BackendVersion::fromString($deploy)->value);
+    }
 }

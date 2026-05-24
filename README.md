@@ -3,9 +3,13 @@
 **Cluster-aware TYPO3 14 cache backend — no shared filesystem.**
 
 Drop-in replacement for `TYPO3\CMS\Core\Cache\Backend\FileBackend` and
-`SimpleFileBackend` in Kubernetes deployments. Cache validity is sourced from
-a **second** TYPO3 cache frontend (which you configure freely); payloads are
-materialised pod-locally as atomically written files.
+`SimpleFileBackend` in Kubernetes deployments. Implements
+`TaggableBackendInterface` and (since v2.2) `PhpCapableBackendInterface`,
+so it can serve VariableFrontend caches (`pages`, `extbase`, …) **and**
+PhpFrontend caches (`typoscript`, `fluid_template`) on the same backend.
+Cache validity is sourced from a **second** TYPO3 cache frontend (which
+you configure freely); payloads are materialised pod-locally as atomically
+written files.
 
 - **Composer package**: `moselwal/cluster-file-backend`
 - **Extension key**: `cluster_file_backend`
@@ -13,6 +17,56 @@ materialised pod-locally as atomically written files.
 - **TYPO3**: 14.3+ (Composer Mode only — no `ext_emconf.php`)
 - **PHP**: 8.5+
 - **License**: MIT
+
+## What's new in v2.2 / v2.3
+
+- **PhpCapableBackendInterface** (v2.2) — `requireOnce()` / `require()` for
+  PhpFrontend caches. The payload-store appends a `.php` suffix on PhpFrontend
+  caches so OPcache ingests the files; compression is forced off (PHP code
+  cannot be a compressed blob); cluster-coherence comes from the
+  BackendVersion-folded hash path (every deploy = new path = OPcache
+  automatic-cold, no `opcache_invalidate()` needed).
+- **One-byte compression marker** (v2.2) — `0x00 none`, `0x01 zstd`, `0x02 gzip`.
+  The reader picks the decompressor from the marker; the writer can mix codecs
+  (e.g. skip-compress for tiny payloads while keeping zstd for the rest).
+- **Skip-compress for small payloads** (v2.2) — option `minCompressedBytes`
+  (default 1024). Payloads below the threshold are stored uncompressed.
+- **Request-scoped metadata L1** (v2.2) — `has()` / `get()` / `remove()` hit
+  an in-memory map of recent `CacheMetadata` lookups; identical identifiers
+  in the same request skip the Valkey/DB roundtrip. ~200× faster on
+  repeated `has()`.
+- **Request-scoped payload L1** (v2.3) — fully decoded payloads are cached
+  in RAM with LRU (default cap 32 entries / 4 MB). Repeated `get()` on a
+  hot identifier drops from ~90 µs to ~0.5 µs — **9–20× faster than
+  SimpleFileBackend** on every repeated read. Capped per option
+  `payloadL1MaxEntries` / `payloadL1MaxBytes`. PhpFrontend caches skip the
+  payload L1 (OPcache is the better in-memory representation).
+- **`cache_l1_hit_total` Prometheus counter** (v2.3) — alongside
+  `cache_hit_total` / `cache_miss_total`, lets operators see the three-layer
+  hit distribution.
+
+## Three-layer storage
+
+```
+┌─ FrankenPHP-Worker RAM ─────────────────────────────────────────┐
+│  OPcache (compiled PHP code)         → PhpFrontend `.php` files │
+│  Payload L1 (decompressed bytes)     → VariableFrontend caches  │
+│  Metadata L1 (CacheMetadata objects) → all caches               │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+┌─ Pod-local emptyDir ────────────────────────────────────────────┐
+│  /<localPath>/<shard>/<sha256>[.php]                            │
+│  • VariableFrontend: 1-byte marker + compressed bytes           │
+│  • PhpFrontend: plain text PHP with `.php` suffix               │
+│  → source of truth for the payload bytes                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ▲
+┌─ Metadata cache (Valkey / DB) ──────────────────────────────────┐
+│  ~300-byte records: { hash, checksum, lifetime, tags, state }   │
+│  → source of truth for cluster-wide cache validity              │
+│  → no PHP code, no payload bytes                                │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## Architecture in one diagram
 
@@ -102,10 +156,14 @@ The `ClusterFileBackend` constructor validates options against a JSON schema.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `compression` | `zstd` | `zstd` \| `gzip` \| `none` |
-| `serializer` | `igbinary` | `igbinary` \| `php` |
-| `defaultLifetimeSeconds` | `3600` | TTL when caller passes `null` |
-| `maxPayloadBytes` | `10485760` (10 MB) | Writes larger than this are rejected with `InvalidDataException` |
+| `compression` | `zstd` | `zstd` \| `gzip` \| `none`. Forced to `none` for PhpFrontend caches regardless of this setting. |
+| `serializer` | `igbinary` | `igbinary` \| `php`. Affects the payload hash; switching invalidates pre-switch entries. |
+| `defaultLifetimeSeconds` | `3600` | TTL when the caller passes `null`. Minimum `1` (schema rejects `0`). |
+| `maxPayloadBytes` | `10485760` (10 MB) | Writes larger than this are rejected with `InvalidDataException`. Also the upper bound for decompressed reads (zstd-bomb mitigation). |
+| `minCompressedBytes` | `1024` | Payloads below this size are stored uncompressed (1-byte marker = `0x00`). Skip-compress saves the gzdeflate/zstd_compress fixed cost on tiny values. `0` = always compress. |
+| `payloadL1MaxEntries` | `32` | Maximum entries in the request-scoped payload L1. `0` disables the payload memoization (the metadata L1 stays active). LRU eviction. |
+| `payloadL1MaxBytes` | `4194304` (4 MB) | Soft memory budget for the payload L1. Entries that would push the total above are evicted in insertion order; a single payload larger than this bypasses the L1 entirely. `0` = no byte budget (entry-count cap only). |
+| `backendVersionEnvVar` | `IMAGE_TAG` | Env var carrying the deploy-scoped identifier. Folded into every payload hash so every deploy gets a fresh path tree. Override for CI conventions like `CI_COMMIT_SHA`. |
 
 If the configured `metadataCacheIdentifier` is not registered as a TYPO3
 cache, the constructor fails **immediately** with a message that names the
@@ -114,10 +172,16 @@ config path — no silent failure on first `set()`.
 ## Installation
 
 ```bash
-composer require moselwal/cluster-file-backend:^1.0.1
+composer require moselwal/cluster-file-backend:^2.3
 # Optional for production: Redis/Valkey backend with TLS / Sentinel
 composer require moselwal/keyvalue-store
 ```
+
+When `moselwal/typo3-config` (≥ 5.4) is also installed, file-backed TYPO3
+caches are auto-rewired onto `ClusterFileBackend` via
+`Config::useClusterFileBackend()`. The Bootstrap-phase caches (`core`,
+`assets`, `database_schema`) are excluded by default because they are
+instantiated before the Symfony DI container exists.
 
 ## Configuration
 
