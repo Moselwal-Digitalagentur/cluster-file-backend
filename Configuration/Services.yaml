@@ -7,9 +7,22 @@ services:
   Moselwal\Typo3ClusterCache\:
     resource: '../Classes/*'
     exclude:
-      - '../Classes/Domain/Model/*'
-      - '../Classes/Domain/Enum/*'
-      - '../Classes/Domain/Exception/*'
+      - '../Classes/Domain/*'
+      # Application/ + Infrastructure/Cache/ + Infrastructure/LocalStore/ +
+      # Infrastructure/Cache/Backend/ are manually instantiated by
+      # ClusterFileBackend::wireNamespaceBoundServices() with runtime values
+      # (CacheNamespace, FrontendInterface, localPath, …). Symfony cannot
+      # autowire them because the metadata-cache dependency chain bottoms out
+      # at FrontendInterface, which has multiple registered implementations
+      # — the DI compiler then refuses to pick one and the container build
+      # fails with "Cannot autowire service … argument $cache references
+      # interface FrontendInterface". Keeping these out of the autowired set
+      # is correct in DDD terms too: they are application-/infrastructure-
+      # services bound to a runtime cache namespace, not container-managed.
+      - '../Classes/Application/*'
+      - '../Classes/Infrastructure/Cache/Typo3MetadataCache.php'
+      - '../Classes/Infrastructure/Cache/Backend/*'
+      - '../Classes/Infrastructure/LocalStore/*'
 
   _instanceof:
     Moselwal\Typo3ClusterCache\Domain\Contract\CompressorPort:
