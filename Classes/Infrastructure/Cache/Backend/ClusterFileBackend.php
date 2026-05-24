@@ -30,6 +30,8 @@ use Moselwal\Typo3ClusterCache\Infrastructure\Compression\GzipCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\Compression\NullCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\Compression\ZstdCompressor;
 use Moselwal\Typo3ClusterCache\Infrastructure\LocalStore\EmptyDirPayloadStore;
+use Moselwal\Typo3ClusterCache\Infrastructure\Observability\PrometheusMetrics;
+use Moselwal\Typo3ClusterCache\Infrastructure\Time\SystemClock;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use TYPO3\CMS\Core\Cache\Backend\AbstractBackend;
@@ -120,8 +122,17 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $this->maxPayloadBytes = (int) $normalized['maxPayloadBytes'];
         $this->cfbLogger = $this->logger ?? new NullLogger();
 
-        $this->metrics = GeneralUtility::makeInstance(MetricsPort::class);
-        $this->clock = GeneralUtility::makeInstance(ClockPort::class);
+        // Bootstrap-safe port resolution: the `assets` cache (and any cache
+        // configured for early-bootstrap use) is instantiated by
+        // Bootstrap::createCache() while only the FailsafeContainer is up
+        // — that container does not know about extension-provided DI
+        // mappings, so GeneralUtility::makeInstance() on a port interface
+        // would fall through to `new $interface()` and throw
+        // "Cannot instantiate interface". Resolve through the container if
+        // available, otherwise fall back to the default implementation that
+        // Services.yaml maps the port to anyway.
+        $this->metrics = $this->resolvePortOrDefault(MetricsPort::class, static fn (): MetricsPort => new PrometheusMetrics());
+        $this->clock = $this->resolvePortOrDefault(ClockPort::class, static fn (): ClockPort => new SystemClock());
 
         $cacheManager = GeneralUtility::makeInstance(CacheManager::class);
         $this->metadataCacheFrontend = $this->resolveMetadataFrontend($cacheManager, $this->metadataCacheIdentifier);
@@ -354,6 +365,32 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
     private function hashIdentifierForLog(CacheIdentifier $identifier): string
     {
         return substr(hash('sha256', $identifier->value), 0, 16);
+    }
+
+    /**
+     * Resolve a port via the TYPO3/Symfony container if possible, otherwise
+     * fall back to the supplied default. Called from the constructor at a
+     * time when the Symfony container may not be available yet (Bootstrap
+     * runs ServiceProvider::getAssetsCache() under the FailsafeContainer
+     * before extension-provided DI mappings exist) — `GeneralUtility::
+     * makeInstance($interface)` would then throw a fatal "Cannot
+     * instantiate interface". This helper degrades gracefully to the
+     * concrete default that Services.yaml aliases the port to anyway.
+     *
+     * @template T of object
+     * @param class-string<T> $interface
+     * @param callable():T $default
+     * @return T
+     */
+    private function resolvePortOrDefault(string $interface, callable $default): object
+    {
+        try {
+            /** @var T $instance */
+            $instance = GeneralUtility::makeInstance($interface);
+            return $instance;
+        } catch (\Throwable) {
+            return $default();
+        }
     }
 
     private function resolveMetadataFrontend(CacheManager $cacheManager, string $identifier): FrontendInterface
