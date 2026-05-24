@@ -250,6 +250,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             compression: $this->compressionName,
             backendVersion: $this->backendVersion,
             minCompressedBytes: $this->minCompressedBytes,
+            bareBytes: $this->isPhpCache,
         );
         $this->reader = new ReadCacheEntry(
             metadataCache: $this->metadataCache,
@@ -258,6 +259,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
             clock: $this->clock,
             metrics: $this->metrics,
             maxDecompressedBytes: $this->maxPayloadBytes,
+            bareBytes: $this->isPhpCache,
         );
         $this->remover = new RemoveCacheEntry($this->metadataCache);
         $this->namespaceFlusher = new FlushNamespace($this->metadataCache, $this->metrics);
@@ -611,13 +613,13 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $digest = $metadata->hash->digest;
         if (!isset($this->verifiedPhpHashes[$digest])) {
             try {
-                // readVerified() re-reads the file and re-hashes against
-                // the metadata-stored checksum. On mismatch, it deletes
-                // the local file and throws PayloadIntegrityException —
-                // we then surface the broken-state to the caller so
-                // TYPO3 triggers a rebuild via set().
                 $this->localStore->readVerified($metadata->hash, $metadata->checksum);
-            } catch (\Throwable $e) {
+            } catch (\Moselwal\Typo3ClusterCache\Domain\Exception\PayloadIntegrityException $e) {
+                // Real integrity failure: sha256 mismatch — the bytes on
+                // disk do not match what metadata says they should be.
+                // Mark broken so subsequent reads short-circuit until TYPO3
+                // rebuilds via set(). markBrokenForPath also wipes the
+                // verifier cache + L1.
                 $this->cfbLogger->error('ClusterFileBackend::doRequire integrity check failed', [
                     'cacheName' => $this->namespace->cacheName,
                     'identifierDigest' => $this->hashIdentifierForLog($identifier),
@@ -626,6 +628,31 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
                     'exceptionMessage' => $e->getMessage(),
                 ]);
                 $this->markBrokenForPath($metadata, $identifier);
+
+                return false;
+            } catch (\Moselwal\Typo3ClusterCache\Domain\Exception\PayloadNotFoundException $e) {
+                // Transient: file vanished or was unreadable between the
+                // is_file() check and file_get_contents() — typical race
+                // when another worker is rewriting the same hash, or a
+                // concurrent flush deleted it. DO NOT mark broken: the
+                // metadata is still authoritative, the local file just
+                // needs to be re-materialised. Return false so TYPO3
+                // triggers a caller rebuild via set(), which writes a
+                // fresh local file. Next requireOnce finds it.
+                $this->cfbLogger->info('ClusterFileBackend::doRequire local-file miss; rebuild expected', [
+                    'cacheName' => $this->namespace->cacheName,
+                    'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                    'hashPrefix' => $metadata->hash->prefix(12),
+                ]);
+
+                return false;
+            } catch (\Throwable $e) {
+                $this->cfbLogger->error('ClusterFileBackend::doRequire unexpected error', [
+                    'cacheName' => $this->namespace->cacheName,
+                    'identifierDigest' => $this->hashIdentifierForLog($identifier),
+                    'exceptionClass' => $e::class,
+                    'exceptionMessage' => $e->getMessage(),
+                ]);
 
                 return false;
             }

@@ -45,6 +45,22 @@ final class WriteCacheEntry
         private readonly CompressionName $compression,
         private readonly BackendVersion $backendVersion,
         private readonly int $minCompressedBytes,
+        /**
+         * When true, the writer skips the one-byte compression-algo marker
+         * prefix on the on-disk payload. Required for PhpFrontend caches:
+         * `require_once` parses the file as PHP source code, and any byte
+         * before `<?php` is echoed as raw output by PHP — corrupting the
+         * response body and crashing HTTP/2 streams with a content-length
+         * mismatch (the EarlyHints/`Content-Length` says N bytes, the body
+         * gets N+1 bytes including the leaked null byte → reverse-proxy
+         * truncates the stream → ERR_HTTP2_PROTOCOL_ERROR in the browser).
+         *
+         * Only safe with `$compression === CompressionAlgo::None`: without
+         * the marker the reader cannot tell which decompressor to use.
+         * ClusterFileBackend enforces both invariants together for
+         * PhpFrontend caches in `setCache()`.
+         */
+        private readonly bool $bareBytes = false,
     ) {}
 
     public function execute(
@@ -63,7 +79,10 @@ final class WriteCacheEntry
         $compressor = $this->compressorsByAlgo[$effectiveAlgo->value]
             ?? throw new \LogicException('compressor not registered for ' . $effectiveAlgo->value);
         $compressed = $compressor->compress($rawBytes);
-        $payload = $effectiveAlgo->marker() . $compressed;
+        // PhpFrontend caches must contain a parseable PHP source on disk;
+        // the marker prefix would leak a NUL byte to the response body via
+        // `require_once`. The reader side knows the encoding from metadata.
+        $payload = $this->bareBytes ? $compressed : ($effectiveAlgo->marker() . $compressed);
         $hash = $this->hasher->fromRawBytes(
             $rawBytes,
             $this->serializer,

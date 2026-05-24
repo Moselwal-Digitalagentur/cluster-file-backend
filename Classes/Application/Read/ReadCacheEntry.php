@@ -58,6 +58,13 @@ final readonly class ReadCacheEntry
         private ClockPort $clock,
         private MetricsPort $metrics,
         private int $maxDecompressedBytes = self::DEFAULT_MAX_DECOMPRESSED_BYTES,
+        /**
+         * Mirror of {@see \Moselwal\Typo3ClusterCache\Application\Write\WriteCacheEntry}'s
+         * `$bareBytes`. When true, the reader treats the on-disk bytes as
+         * plain payload (no marker prefix); the codec is implicit `None`
+         * because the writer guarantees uncompressed storage in this mode.
+         */
+        private bool $bareBytes = false,
     ) {}
 
     public function execute(CacheNamespace $namespace, CacheIdentifier $identifier): ?string
@@ -106,30 +113,39 @@ final readonly class ReadCacheEntry
             return null;
         }
 
-        // Payload byte zero is a CompressionAlgo marker (since v2.2.0).
-        // BackendVersionInfo::CURRENT was bumped at the same time so any
-        // pre-marker payload would already be unreachable via mismatched
-        // hash — but if a corrupt or foreign payload slips through, treat
-        // it as integrity failure to drive the broken-state flow.
-        if ('' === $bytes) {
-            $this->localStore->delete($metadata->hash);
-            $this->markBroken($metadata, $identifier, $now);
-            $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'broken']);
+        // In bare-bytes mode (PhpFrontend caches) the file holds the raw
+        // payload without a one-byte marker prefix. The writer guarantees
+        // compression=None in that mode, so the codec is implicit.
+        if ($this->bareBytes) {
+            $compressor = $this->compressorsByAlgo[CompressionAlgo::None->value]
+                ?? throw new \LogicException('NullCompressor not registered');
+            $payload = $bytes;
+        } else {
+            // Payload byte zero is a CompressionAlgo marker (since v2.2.0).
+            // BackendVersionInfo::CURRENT was bumped at the same time so any
+            // pre-marker payload would already be unreachable via mismatched
+            // hash — but if a corrupt or foreign payload slips through, treat
+            // it as integrity failure to drive the broken-state flow.
+            if ('' === $bytes) {
+                $this->localStore->delete($metadata->hash);
+                $this->markBroken($metadata, $identifier, $now);
+                $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'broken']);
 
-            return null;
-        }
-        try {
-            $algo = CompressionAlgo::fromMarker($bytes[0]);
-        } catch (\InvalidArgumentException) {
-            $this->localStore->delete($metadata->hash);
-            $this->markBroken($metadata, $identifier, $now);
-            $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'broken']);
+                return null;
+            }
+            try {
+                $algo = CompressionAlgo::fromMarker($bytes[0]);
+            } catch (\InvalidArgumentException) {
+                $this->localStore->delete($metadata->hash);
+                $this->markBroken($metadata, $identifier, $now);
+                $this->metrics->counter('cache_miss_total', $labels + ['reason' => 'broken']);
 
-            return null;
+                return null;
+            }
+            $compressor = $this->compressorsByAlgo[$algo->value]
+                ?? throw new \LogicException('compressor not registered for ' . $algo->value);
+            $payload = substr($bytes, 1);
         }
-        $compressor = $this->compressorsByAlgo[$algo->value]
-            ?? throw new \LogicException('compressor not registered for ' . $algo->value);
-        $payload = substr($bytes, 1);
 
         $this->metrics->counter('cache_hit_total', $labels);
         $this->metrics->counter('local_payload_hit_total', $labels);
