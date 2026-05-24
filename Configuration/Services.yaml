@@ -4,25 +4,25 @@ services:
     autoconfigure: true
     public: false
 
-  Moselwal\Typo3ClusterCache\:
-    resource: '../Classes/*'
-    exclude:
-      - '../Classes/Domain/*'
-      # Application/ + Infrastructure/Cache/ + Infrastructure/LocalStore/ +
-      # Infrastructure/Cache/Backend/ are manually instantiated by
-      # ClusterFileBackend::wireNamespaceBoundServices() with runtime values
-      # (CacheNamespace, FrontendInterface, localPath, …). Symfony cannot
-      # autowire them because the metadata-cache dependency chain bottoms out
-      # at FrontendInterface, which has multiple registered implementations
-      # — the DI compiler then refuses to pick one and the container build
-      # fails with "Cannot autowire service … argument $cache references
-      # interface FrontendInterface". Keeping these out of the autowired set
-      # is correct in DDD terms too: they are application-/infrastructure-
-      # services bound to a runtime cache namespace, not container-managed.
-      - '../Classes/Application/*'
-      - '../Classes/Infrastructure/Cache/Typo3MetadataCache.php'
-      - '../Classes/Infrastructure/Cache/Backend/*'
-      - '../Classes/Infrastructure/LocalStore/*'
+  # We register only the leaf services that the Symfony DI compiler can
+  # actually resolve. The application-/infrastructure-layer adapters
+  # (Application/*, Infrastructure/Cache/Typo3MetadataCache,
+  # Infrastructure/LocalStore/*) are constructed manually by
+  # ClusterFileBackend::wireNamespaceBoundServices() with a runtime-bound
+  # CacheNamespace and FrontendInterface — they are not container-managed.
+  # Exposing them through a `resource: '../Classes/*'` glob would force the
+  # compiler to autowire e.g. Typo3MetadataCache's `$cache: FrontendInterface`
+  # argument, which has multiple registered implementations and so cannot be
+  # picked automatically. The DI build then fails with "Cannot autowire …
+  # argument $cache references interface FrontendInterface".
+  Moselwal\Typo3ClusterCache\Infrastructure\Time\SystemClock: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\Observability\PrometheusMetrics: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\Observability\StructuredLoggerEnricher: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\Compression\NullCompressor: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\Compression\GzipCompressor: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\Compression\ZstdCompressor: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\Cache\Backend\OptionsValidator: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\WarmUp\BackendWarmUpRunner: ~
 
   _instanceof:
     Moselwal\Typo3ClusterCache\Domain\Contract\CompressorPort:
@@ -40,20 +40,14 @@ services:
     alias: Moselwal\Typo3ClusterCache\Infrastructure\Observability\PrometheusMetrics
 
   # Presentation
-  Moselwal\Typo3ClusterCache\Presentation\Command\GarbageCollectCommand:
-    public: true
-    tags:
-      - name: 'console.command'
-        command: 'clusterfilebackend:gc'
-        description: 'Garbage collection for ClusterFileBackend metadata'
-
-  Moselwal\Typo3ClusterCache\Presentation\Command\WarmUpCommand:
-    public: true
-    tags:
-      - name: 'console.command'
-        command: 'clusterfilebackend:warmup'
-        description: 'Pre-flight warm-up of cluster-cache namespaces (deployment-time)'
-
+  # NOTE: GarbageCollectCommand and WarmUpCommand currently depend on
+  # namespace-bound Application/* services (RunGarbageCollection, etc.) that
+  # cannot be autowired (they require a runtime CacheNamespace). Wiring them
+  # as DI services breaks the container compile, so they are left
+  # unregistered for now. The CLI commands are therefore not active; the
+  # ClusterFileBackend itself works through the regular TYPO3 cache API.
+  # Re-enable once the commands can lazy-resolve their runners from the
+  # CacheManager → ClusterFileBackend instead of constructor injection.
   Moselwal\Typo3ClusterCache\Presentation\EventListener\CacheWarmupListener:
     tags:
       - name: 'event.listener'
