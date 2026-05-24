@@ -7,8 +7,8 @@ declare(strict_types=1);
 
 namespace Moselwal\Typo3ClusterCache\Presentation\Command;
 
-use Moselwal\Typo3ClusterCache\Application\GarbageCollect\RunGarbageCollection;
 use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
+use Moselwal\Typo3ClusterCache\Infrastructure\GarbageCollect\BackendGarbageCollectRunner;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -26,7 +26,7 @@ final class GarbageCollectCommand extends Command
     private const int EXIT_ARG_ERROR = 64;
 
     public function __construct(
-        private readonly RunGarbageCollection $gcRunner,
+        private readonly BackendGarbageCollectRunner $runner,
     ) {
         parent::__construct();
     }
@@ -60,7 +60,7 @@ final class GarbageCollectCommand extends Command
 
         $dryRun = (bool) $input->getOption('dry-run');
         try {
-            $report = $this->gcRunner->execute($namespace, $dryRun);
+            $report = $this->runner->run($namespace, $dryRun);
             $output->writeln((string) json_encode($report->toArray(), \JSON_THROW_ON_ERROR));
 
             return self::EXIT_OK;

@@ -23,6 +23,7 @@ services:
   Moselwal\Typo3ClusterCache\Infrastructure\Compression\ZstdCompressor: ~
   Moselwal\Typo3ClusterCache\Infrastructure\Cache\Backend\OptionsValidator: ~
   Moselwal\Typo3ClusterCache\Infrastructure\WarmUp\BackendWarmUpRunner: ~
+  Moselwal\Typo3ClusterCache\Infrastructure\GarbageCollect\BackendGarbageCollectRunner: ~
 
   _instanceof:
     Moselwal\Typo3ClusterCache\Domain\Contract\CompressorPort:
@@ -40,14 +41,25 @@ services:
     alias: Moselwal\Typo3ClusterCache\Infrastructure\Observability\PrometheusMetrics
 
   # Presentation
-  # NOTE: GarbageCollectCommand and WarmUpCommand currently depend on
-  # namespace-bound Application/* services (RunGarbageCollection, etc.) that
-  # cannot be autowired (they require a runtime CacheNamespace). Wiring them
-  # as DI services breaks the container compile, so they are left
-  # unregistered for now. The CLI commands are therefore not active; the
-  # ClusterFileBackend itself works through the regular TYPO3 cache API.
-  # Re-enable once the commands can lazy-resolve their runners from the
-  # CacheManager → ClusterFileBackend instead of constructor injection.
+  # Both CLI commands inject Infrastructure runners
+  # (BackendGarbageCollectRunner, BackendWarmUpRunner) that lazy-resolve
+  # the namespace-bound Application services on demand via the CacheManager
+  # — see those classes for the rationale. The commands themselves are
+  # therefore safe to autowire.
+  Moselwal\Typo3ClusterCache\Presentation\Command\GarbageCollectCommand:
+    public: true
+    tags:
+      - name: 'console.command'
+        command: 'clusterfilebackend:gc'
+        description: 'Garbage collection for ClusterFileBackend metadata'
+
+  Moselwal\Typo3ClusterCache\Presentation\Command\WarmUpCommand:
+    public: true
+    tags:
+      - name: 'console.command'
+        command: 'clusterfilebackend:warmup'
+        description: 'Pre-flight warm-up of cluster-cache namespaces (deployment-time)'
+
   Moselwal\Typo3ClusterCache\Presentation\EventListener\CacheWarmupListener:
     tags:
       - name: 'event.listener'

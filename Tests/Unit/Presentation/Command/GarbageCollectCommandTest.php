@@ -7,7 +7,12 @@ declare(strict_types=1);
 
 namespace Moselwal\Typo3ClusterCache\Tests\Unit\Presentation\Command;
 
+use Moselwal\Typo3ClusterCache\Application\GarbageCollect\GarbageCollectionReport;
 use Moselwal\Typo3ClusterCache\Application\GarbageCollect\RunGarbageCollection;
+use Moselwal\Typo3ClusterCache\Domain\Contract\ClockPort;
+use Moselwal\Typo3ClusterCache\Domain\Contract\MetadataCachePort;
+use Moselwal\Typo3ClusterCache\Domain\Model\CacheNamespace;
+use Moselwal\Typo3ClusterCache\Infrastructure\GarbageCollect\BackendGarbageCollectRunner;
 use Moselwal\Typo3ClusterCache\Presentation\Command\GarbageCollectCommand;
 use Moselwal\Typo3ClusterCache\Tests\Support\FakeClock;
 use Moselwal\Typo3ClusterCache\Tests\Support\FakeMetadataCache;
@@ -25,11 +30,31 @@ final class GarbageCollectCommandTest extends TestCase
     protected function setUp(): void
     {
         $this->cache = new FakeMetadataCache();
-        $runner = new RunGarbageCollection($this->cache, new FakeClock(1_700_000_000));
+        $runner = $this->makeRunner($this->cache, new FakeClock(1_700_000_000));
         $command = new GarbageCollectCommand($runner);
         $application = new Application();
         $application->addCommand($command);
         $this->tester = new CommandTester($application->find('clusterfilebackend:gc'));
+    }
+
+    /**
+     * Builds a BackendGarbageCollectRunner test double that bypasses the
+     * CacheManager lookup and routes straight to {@see RunGarbageCollection}
+     * with the supplied metadata cache. Uses PHPUnit's `MockBuilder` so the
+     * parent constructor can be skipped without breaking PHPStan's
+     * `constructor.missingParentCall` rule via inheritance.
+     */
+    private function makeRunner(MetadataCachePort $cache, ClockPort $clock): BackendGarbageCollectRunner
+    {
+        $runner = $this->getMockBuilder(BackendGarbageCollectRunner::class)
+            ->disableOriginalConstructor()
+            ->onlyMethods(['run'])
+            ->getMock();
+        $runner->method('run')->willReturnCallback(
+            static fn(CacheNamespace $namespace, bool $dryRun = false): GarbageCollectionReport => new RunGarbageCollection($cache, $clock)->execute($namespace, $dryRun),
+        );
+
+        return $runner;
     }
 
     public function testRequiresNamespaceOption(): void

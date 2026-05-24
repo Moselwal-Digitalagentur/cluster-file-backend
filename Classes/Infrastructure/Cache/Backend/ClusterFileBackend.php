@@ -131,8 +131,8 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         // "Cannot instantiate interface". Resolve through the container if
         // available, otherwise fall back to the default implementation that
         // Services.yaml maps the port to anyway.
-        $this->metrics = $this->resolvePortOrDefault(MetricsPort::class, static fn (): MetricsPort => new PrometheusMetrics());
-        $this->clock = $this->resolvePortOrDefault(ClockPort::class, static fn (): ClockPort => new SystemClock());
+        $this->metrics = $this->resolvePortOrDefault(MetricsPort::class, static fn(): MetricsPort => new PrometheusMetrics());
+        $this->clock = $this->resolvePortOrDefault(ClockPort::class, static fn(): ClockPort => new SystemClock());
 
         $cacheManager = GeneralUtility::makeInstance(CacheManager::class);
         $this->metadataCacheFrontend = $this->resolveMetadataFrontend($cacheManager, $this->metadataCacheIdentifier);
@@ -384,8 +384,10 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
      * concrete default that Services.yaml aliases the port to anyway.
      *
      * @template T of object
+     *
      * @param class-string<T> $interface
-     * @param callable():T $default
+     * @param callable():T    $default
+     *
      * @return T
      */
     private function resolvePortOrDefault(string $interface, callable $default): object
@@ -393,6 +395,7 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         try {
             /** @var T $instance */
             $instance = GeneralUtility::makeInstance($interface);
+
             return $instance;
         } catch (\Throwable) {
             return $default();
