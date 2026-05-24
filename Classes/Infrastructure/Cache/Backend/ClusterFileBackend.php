@@ -137,13 +137,19 @@ final class ClusterFileBackend extends AbstractBackend implements TaggableBacken
         $cacheManager = GeneralUtility::makeInstance(CacheManager::class);
         $this->metadataCacheFrontend = $this->resolveMetadataFrontend($cacheManager, $this->metadataCacheIdentifier);
 
+        // Initialize $namespace BEFORE resolveCompressor() — the zstd
+        // fallback path emits a structured-log line with `cacheName` from
+        // $this->namespace, which would otherwise blow up with "Typed
+        // property must not be accessed before initialization" on systems
+        // without ext-zstd.
+        $this->namespace = new CacheNamespace($this->environment, $this->instance, 'unbound');
+
         $this->serializer = $this->resolveSerializer((string) $normalized['serializer']);
         $this->compressor = $this->resolveCompressor((string) $normalized['compression']);
         $this->compressionName = CompressionName::fromString($this->compressor->name());
         $this->backendVersion = BackendVersion::fromEnv((string) $normalized['backendVersionEnvVar']);
 
         $this->localStore = new EmptyDirPayloadStore($this->localPath);
-        $this->namespace = new CacheNamespace($this->environment, $this->instance, 'unbound');
         $this->wireNamespaceBoundServices();
     }
 
