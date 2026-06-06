@@ -3,7 +3,13 @@
     "type": "typo3-cms-extension",
     "description": "Cluster-aware TYPO3 14 cache backend for Kubernetes — no shared filesystem, central cache truth, deterministic re-materialisation.",
     "license": "MIT",
-    "keywords": ["typo3", "cache", "kubernetes", "cluster", "stateless"],
+    "keywords": [
+        "typo3",
+        "cache",
+        "kubernetes",
+        "cluster",
+        "stateless"
+    ],
     "authors": [
         {
             "name": "Moselwal Digitalagentur GmbH",
@@ -17,6 +23,7 @@
             "role": "Developer"
         }
     ],
+    "homepage": "https://moselwal.de",
     "support": {
         "issues": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend/issues",
         "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend"
