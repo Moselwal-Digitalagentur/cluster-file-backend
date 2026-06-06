@@ -21,6 +21,12 @@
         "issues": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend/issues",
         "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend"
     },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://gitlab.moselwal.io/api/v4/group/175/-/packages/composer/"
+        }
+    ],
     "require": {
         "php": "^8.5",
         "ext-hash": "*",
