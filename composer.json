@@ -21,13 +21,6 @@
         "issues": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend/issues",
         "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend"
     },
-    "repositories": [
-        {
-            "type": "path",
-            "url": "../dev",
-            "options": { "symlink": true }
-        }
-    ],
     "require": {
         "php": "^8.5",
         "ext-hash": "*",
@@ -36,7 +29,7 @@
     },
     "require-dev": {
         "deptrac/deptrac": "^4.6",
-        "moselwal/dev": "@dev",
+        "moselwal/dev": "^5.0",
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpunit/phpunit": "^11.0",
         "typo3/testing-framework": "^9.0"
