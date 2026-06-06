@@ -47,7 +47,7 @@ written files.
 
 ## Three-layer storage
 
-```
+```text
 ┌─ FrankenPHP-Worker RAM ─────────────────────────────────────────┐
 │  OPcache (compiled PHP code)         → PhpFrontend `.php` files │
 │  Payload L1 (decompressed bytes)     → VariableFrontend caches  │
@@ -74,7 +74,7 @@ written files.
 > to the TYPO3 cache API and delegates cluster persistence to a TYPO3 cache
 > backend of your choice.
 
-```
+```text
 TYPO3 Cache API → ClusterFileBackend
                       │
                       ├─► Metadata cache (a second TYPO3 cache frontend;
@@ -175,7 +175,7 @@ config path — no silent failure on first `set()`.
 composer require moselwal/cluster-file-backend:^2.3
 # Optional for production: Redis/Valkey backend with TLS / Sentinel
 composer require moselwal/keyvalue-store
-```
+```text
 
 When `moselwal/typo3-config` (≥ 5.4) is also installed, file-backed TYPO3
 caches are auto-rewired onto `ClusterFileBackend` via
@@ -235,7 +235,7 @@ foreach (['pages', 'pagesection', 'rootline'] as $cacheName) {
         'groups' => ['pages'],
     ];
 }
-```
+```text
 
 ## Kubernetes deployment (excerpt)
 
@@ -259,7 +259,7 @@ starts serving requests. Trigger our warm-up explicitly:
     --namespace=cfb:prod:website-a:pages \
     --namespace=cfb:prod:website-a:pagesection \
     --namespace=cfb:prod:website-a:rootline
-```
+```text
 
 The command emits one JSON line per namespace and exits non-zero if any
 namespace fails health checks. Hook this into your readiness/startup probe
@@ -289,7 +289,7 @@ spec:
           containers:
             - name: typo3-cli
               args: ["clusterfilebackend:gc", "--namespace=cfb:prod:website-a:pages"]
-```
+```text
 
 ## Cluster consistency — what happens on cache-clear?
 
@@ -318,7 +318,7 @@ KeyValueBackend / DatabaseBackend / MemcachedBackend → flush()
    │
    ▼  happens SERVER-SIDE (Redis FLUSHDB, SQL TRUNCATE, Memcached flush_all)
 All pods see the empty metadata immediately
-```
+```text
 
 On the next `get(id)` on **any** pod:
 
@@ -373,7 +373,7 @@ composer phpstan            # PHPStan level 8 + bleeding edge + deprecation rule
 composer deptrac            # DDD layer enforcement
 composer cs:check           # @Symfony + @PER-CS3x0 + @PHP85Migration via moselwal/dev
 composer qa                 # Aggregate of all checks above
-```
+```text
 
 REUSE/SPDX header conformance is checked in CI via the official
 `fsfe/reuse:latest` Docker image (see `.gitlab-ci.yml`); for local
@@ -431,7 +431,7 @@ Override the variable name per cache if you use a different CI convention:
     'namespace'              => ['environment' => 'prod', 'instance' => 'site'],
     'backendVersionEnvVar'   => 'CI_COMMIT_SHA',
 ],
-```
+```text
 
 When the variable is unset or empty, the backend falls back to the
 package-internal `BackendVersion::current()` — safe for local

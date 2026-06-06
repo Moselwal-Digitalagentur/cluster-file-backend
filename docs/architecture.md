@@ -5,7 +5,7 @@ Blick. Detail-Spezifikationen liegen in `specs/001-cluster-cache-backend/`.
 
 ## DDD-4-Layer
 
-```
+```text
 ┌────────────────────────────────────────────────────────────────────────┐
 │                         TYPO3 Cache API                                │
 │            (CacheManager → FrontendInterface → BackendInterface)       │
@@ -78,7 +78,7 @@ Enforced über `deptrac.yaml` — 0 Violations zur Laufzeit.
 
 ### Schreib-Pfad (`set`)
 
-```
+```text
 TYPO3 CacheManager
   └─► ClusterFileBackend::set()
        ├─► WriteCacheEntry::execute()
@@ -95,7 +95,7 @@ TYPO3 CacheManager
 
 ### Lese-Pfad (`get`)
 
-```
+```text
 TYPO3 CacheManager
   └─► ClusterFileBackend::get()
        └─► ReadCacheEntry::execute()
@@ -108,7 +108,7 @@ TYPO3 CacheManager
 
 ### Garbage Collection (CLI)
 
-```
+```text
 clusterfilebackend:gc --namespace=cfb:prod:website-a:pages
   └─► GarbageCollectCommand::execute()
        └─► RunGarbageCollection::execute(namespace)
