@@ -6,10 +6,16 @@
     "keywords": ["typo3", "cache", "kubernetes", "cluster", "stateless"],
     "authors": [
         {
-            "name": "Moselwal",
-            "homepage": "https://moselwal.io"
+            "name": "Moselwal Digitalagentur GmbH",
+            "email": "support@moselwal.io",
+            "homepage": "https://moselwal.io",
+            "role": "Maintainer"
         }
     ],
+    "support": {
+        "issues": "https://github.com/moselwal/cluster-file-backend/issues",
+        "source": "https://github.com/moselwal/cluster-file-backend"
+    },
     "repositories": [
         {
             "type": "path",
