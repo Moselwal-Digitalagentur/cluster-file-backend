@@ -6,15 +6,25 @@
     "keywords": ["typo3", "cache", "kubernetes", "cluster", "stateless"],
     "authors": [
         {
-            "name": "Moselwal",
-            "homepage": "https://moselwal.io"
+            "name": "Moselwal Digitalagentur GmbH",
+            "email": "support@moselwal.io",
+            "homepage": "https://moselwal.io",
+            "role": "Maintainer"
+        },
+        {
+            "name": "Kai Ole Hartwig",
+            "email": "o.hartwig@moselwal.de",
+            "role": "Developer"
         }
     ],
+    "support": {
+        "issues": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend/issues",
+        "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend"
+    },
     "repositories": [
         {
-            "type": "path",
-            "url": "../dev",
-            "options": { "symlink": true }
+            "type": "composer",
+            "url": "https://gitlab.moselwal.io/api/v4/group/175/-/packages/composer/"
         }
     ],
     "require": {
@@ -25,7 +35,7 @@
     },
     "require-dev": {
         "deptrac/deptrac": "^4.6",
-        "moselwal/dev": "@dev",
+        "moselwal/dev": "^5.0",
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpunit/phpunit": "^11.0",
         "typo3/testing-framework": "^9.0"
