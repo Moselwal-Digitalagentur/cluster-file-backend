@@ -1,8 +1,8 @@
 {
     "name": "moselwal/cluster-file-backend",
-    "type": "typo3-cms-extension",
     "description": "Cluster-aware TYPO3 14 cache backend for Kubernetes — no shared filesystem, central cache truth, deterministic re-materialisation.",
     "license": "MIT",
+    "type": "typo3-cms-extension",
     "keywords": [
         "typo3",
         "cache",
@@ -28,20 +28,15 @@
         "issues": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend/issues",
         "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend"
     },
-    "repositories": [
-        {
-            "type": "composer",
-            "url": "https://gitlab.moselwal.io/api/v4/group/175/-/packages/composer/"
-        }
-    ],
     "require": {
         "php": "^8.5",
         "ext-hash": "*",
-        "typo3/cms-core": "^14.3",
-        "justinrainbow/json-schema": "^6.0"
+        "justinrainbow/json-schema": "^6.0",
+        "typo3/cms-core": "^14.3"
     },
     "require-dev": {
         "deptrac/deptrac": "^4.6",
+        "ergebnis/composer-normalize": "^2.52",
         "moselwal/dev": "^5.0",
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "phpunit/phpunit": "^11.0",
@@ -52,6 +47,12 @@
         "ext-zstd": "Faster default compression (recommended)",
         "moselwal/keyvalue-store": "Provides a TYPO3 cache backend (KeyValueBackend) for Redis/Valkey that can be configured as the metadata cache."
     },
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://gitlab.moselwal.io/api/v4/group/175/-/packages/composer/"
+        }
+    ],
     "autoload": {
         "psr-4": {
             "Moselwal\\Typo3ClusterCache\\": "Classes/"
@@ -63,13 +64,14 @@
         }
     },
     "config": {
-        "sort-packages": true,
         "allow-plugins": {
+            "ergebnis/composer-normalize": true,
             "phpstan/extension-installer": true,
             "sbuerk/typo3-cmscomposerinstallers-testingframework-bridge": true,
             "typo3/class-alias-loader": true,
             "typo3/cms-composer-installers": true
-        }
+        },
+        "sort-packages": true
     },
     "extra": {
         "typo3/cms": {
@@ -80,16 +82,16 @@
         }
     },
     "scripts": {
-        "test": "phpunit --testsuite=Unit",
-        "phpstan": "phpstan analyse --memory-limit=512M",
-        "deptrac": "deptrac analyse --no-progress",
         "cs:check": "php-cs-fixer fix --dry-run --diff",
         "cs:fix": "php-cs-fixer fix",
+        "deptrac": "deptrac analyse --no-progress",
+        "phpstan": "phpstan analyse --memory-limit=512M",
         "qa": [
             "@cs:check",
             "@phpstan",
             "@deptrac",
             "@test"
-        ]
+        ],
+        "test": "phpunit --testsuite=Unit"
     }
 }
