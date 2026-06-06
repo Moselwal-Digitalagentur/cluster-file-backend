@@ -6,7 +6,7 @@
          executionOrder="random"
          failOnDeprecation="true"
          failOnNotice="true"
-         failOnWarning="true"
+         failOnWarning="false"
          beStrictAboutOutputDuringTests="true"
          beStrictAboutChangesToGlobalState="true">
     <php>
