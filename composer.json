@@ -57,7 +57,6 @@
     },
     "config": {
         "sort-packages": true,
-        "gitlab-domains": ["gitlab.moselwal.io"],
         "allow-plugins": {
             "phpstan/extension-installer": true,
             "sbuerk/typo3-cmscomposerinstallers-testingframework-bridge": true,
