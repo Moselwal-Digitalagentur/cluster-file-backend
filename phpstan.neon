@@ -19,3 +19,9 @@ parameters:
     treatPhpDocTypesAsCertain: false
     reportUnmatchedIgnoredErrors: true
     tmpDir: .phpstan.cache
+    # The franken-php image's `php` is a caddy wrapper that doesn't accept
+    # PHPStan's parallel-worker invocation (`php -c /etc/php/php.ini ...`)
+    # → "Command /etc/php/php.ini is not defined". Run single-threaded
+    # until the image ships a CLI-shim that proxies -c properly.
+    parallel:
+        maximumNumberOfProcesses: 1
