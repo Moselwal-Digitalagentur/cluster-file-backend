@@ -10,6 +10,11 @@
             "email": "support@moselwal.io",
             "homepage": "https://moselwal.io",
             "role": "Maintainer"
+        },
+        {
+            "name": "Kai Ole Hartwig",
+            "email": "o.hartwig@moselwal.de",
+            "role": "Developer"
         }
     ],
     "support": {
