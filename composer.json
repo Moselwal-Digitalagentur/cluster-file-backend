@@ -24,7 +24,7 @@
     "repositories": [
         {
             "type": "composer",
-            "url": "https://gitlab.moselwal.io/api/v4/projects/619/packages/composer/"
+            "url": "https://gitlab.moselwal.io/api/v4/group/175/-/packages/composer/"
         }
     ],
     "require": {
