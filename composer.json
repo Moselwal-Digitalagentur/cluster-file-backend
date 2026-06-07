@@ -26,7 +26,8 @@
     "homepage": "https://moselwal.de",
     "support": {
         "issues": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend/issues",
-        "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend"
+        "source": "https://github.com/Moselwal-Digitalagentur/cluster-file-backend",
+        "docs": "https://moselwal.de/open-source/cluster-file-backend"
     },
     "require": {
         "php": "^8.5",
