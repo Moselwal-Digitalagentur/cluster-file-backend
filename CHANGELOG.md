@@ -1,3 +1,10 @@
+## [2.4.1](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/compare/v2.4.0...v2.4.1) (2026-06-07)
+
+
+### Bug Fixes
+
+* **release:** drop [skip ci] from semantic-release commit ([6bb8689](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/6bb8689ae71d3cc09ee9049e6bddabc4478aeb4e))
+
 # [2.4.0](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/compare/v2.3.4...v2.4.0) (2026-06-07)
 
 
