@@ -1,3 +1,25 @@
+# [2.4.0](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/compare/v2.3.4...v2.4.0) (2026-06-07)
+
+
+### Bug Fixes
+
+* **ci:** allow_failure on 9 known-broken component jobs ([10a3951](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/10a39516d07d953a0b9f5ba88443cdcf94fea965))
+* composer normalize + require-checker whitelist for transitive symbols ([5d2ce35](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/5d2ce359ae85be026d6658b16b3eb87fb5fbfcc3))
+* **composer:** add homepage field ([273189d](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/273189d0fa8f8176aa1abb2c4a887b6ccca003a6))
+* **md:** replace bare fenced codeblocks with ```text ([445f67d](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/445f67d93c466c9d784806258bca899bf009c94d))
+* **md:** scope markdownlint to public surfaces ([7486fd2](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/7486fd2bdfa2cc65d36f9c662e57446e7b9017dd))
+* update moselwal contact to .de domain ([a5b903a](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/a5b903a5eaa56e969f9bfc90f426707b4e8f7079))
+
+
+### Features
+
+* **ci:** add TER publish to release stage ([8ab5107](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/8ab5107463ee9c86f33dc4d25c52623bf103feaa))
+
+
+### Reverts
+
+* **ci:** drop allow_failure overrides ([ad29fcd](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/commit/ad29fcd8ca59f69dcb5c7fb2b1371c4b778f56e2))
+
 # Changelog
 
 Alle nennenswerten Änderungen werden in dieser Datei dokumentiert.
