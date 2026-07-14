@@ -102,12 +102,22 @@ final readonly class Typo3MetadataCache implements MetadataCachePort
 
     public function flushByTags(array $tags): void
     {
-        new TagSet($tags);
-        $namespaced = [];
-        foreach ($tags as $tag) {
-            $namespaced[] = $this->namespacedUserTag($tag);
+        // Core imposes no tag-count ceiling on flushes — a single page can
+        // legitimately carry hundreds of cache tags. TagSet::MAX_TAGS guards
+        // the write path (an entry's own tags), not tag-based flush queries,
+        // so an over-limit list must not abort the whole invalidation (which
+        // previously threw "TagSet exceeds maximum of 64 tags" → the flush was
+        // swallowed and the cache never invalidated → stale delivery). Batch
+        // into MAX_TAGS-sized chunks: per-chunk pattern validation still runs
+        // and flushByTags is a union, so the result is identical.
+        foreach (array_chunk(array_values(array_unique($tags)), TagSet::MAX_TAGS) as $chunk) {
+            new TagSet($chunk);
+            $namespaced = [];
+            foreach ($chunk as $tag) {
+                $namespaced[] = $this->namespacedUserTag($tag);
+            }
+            $this->cache->flushByTags($namespaced);
         }
-        $this->cache->flushByTags($namespaced);
     }
 
     public function findIdentifiersByTag(string $tag): array
