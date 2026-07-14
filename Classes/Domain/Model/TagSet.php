@@ -11,8 +11,12 @@ final readonly class TagSet
 {
     // Mirrors TYPO3 Core's FrontendInterface::PATTERN_TAG (TYPO3 14):
     // `[a-zA-Z0-9_%\-&]{1,250}`. The tag count limit is a defensive guard
-    // against unbounded tag growth — core itself has none.
-    private const int MAX_TAGS = 64;
+    // against unbounded tag growth on the WRITE path (a single entry's own
+    // tags) — core itself has none. Tag-based FLUSH queries carry no such
+    // ceiling and must batch into MAX_TAGS-sized chunks instead of tripping
+    // this guard (see Typo3MetadataCache::flushByTags). Public so the flush
+    // path can size its chunks against the single source of truth.
+    public const int MAX_TAGS = 64;
     private const string TAG_PATTERN = '/^[a-zA-Z0-9_%\-&]{1,250}$/';
 
     /** @var list<string> */
