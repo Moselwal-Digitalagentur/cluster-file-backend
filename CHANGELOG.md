@@ -1,3 +1,11 @@
+## [2.5.1](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/compare/v2.5.0...v2.5.1) (2026-07-24)
+
+
+### Bug Fixes
+
+* **ci:** drop ter-publish (no TER publishing for now) ([6218838](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/commit/6218838d77007f6c371757a6063e450e538cce01))
+* **ci:** ter-publish 1.2.12 (az1a IPv4 for tailor install) ([b598164](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/commit/b598164572f56a4d2c0d5ff1354bfbd46466ac9d))
+
 # [2.5.0](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/compare/v2.4.1...v2.5.0) (2026-07-24)
 
 
