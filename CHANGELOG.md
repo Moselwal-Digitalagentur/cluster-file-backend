@@ -1,3 +1,16 @@
+# [2.5.0](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/compare/v2.4.1...v2.5.0) (2026-07-24)
+
+
+### Bug Fixes
+
+* **cache:** batch flushByTags into MAX_TAGS chunks ([91d2cc5](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/commit/91d2cc5b5eb4aef1cc925cdde99f6461c6f2a6bd))
+* **deps:** bump extension-clean-export to 1.2.2 (TER tailor fix) ([d337fc6](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/commit/d337fc61f23d2705801f20b1c9513c0bfd2c2488))
+
+
+### Features
+
+* **release:** add develop branch as rc-prerelease channel ([9dcf77d](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/commit/9dcf77d35d91fd138b2a3111a5defd3d8f3a0d05))
+
 ## [2.4.1](https://gitlab.moselwal.io/development/moselwal/cluster-file-backend/compare/v2.4.0...v2.4.1) (2026-06-07)
 
 
