@@ -1,3 +1,10 @@
+## [2.5.2](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/compare/v2.5.1...v2.5.2) (2026-07-29)
+
+
+### Bug Fixes
+
+* **docs:** point at the handbook repository, not an unreachable domain ([81457b1](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/commit/81457b19047be70db4caa192e70b2419dbc948ef))
+
 ## [2.5.1](https://git.ole-hartwig.eu/development/moselwal/cluster-file-backend/compare/v2.5.0...v2.5.1) (2026-07-24)
 
 
