@@ -56,7 +56,7 @@ final class ClusterFileBackendTest extends TestCase
         // CacheManager is a TYPO3 singleton, the ports are not — those go in
         // through addInstance(), which is a one-shot queue and therefore has to
         // be refilled for every backend that gets built.
-        /** @phpstan-ignore staticMethod.internal (the documented way to place a double) */
+        /* @phpstan-ignore staticMethod.internal (the documented way to place a double) */
         GeneralUtility::setSingletonInstance(CacheManager::class, $this->cacheManagerReturning($this->metadataFrontend));
     }
 
@@ -85,7 +85,7 @@ final class ClusterFileBackendTest extends TestCase
 
     private function cacheManagerReturning(FrontendInterface $frontend): CacheManager
     {
-        return new class($frontend) extends CacheManager {
+        return new class ($frontend) extends CacheManager {
             public function __construct(private FrontendInterface $frontend)
             {
                 parent::__construct();
@@ -246,7 +246,7 @@ final class ClusterFileBackendTest extends TestCase
     {
         $backend = $this->backend();
         $tags = [];
-        for ($i = 0; $i < 200; $i++) {
+        for ($i = 0; $i < 200; ++$i) {
             $tags[] = 'pageId_' . $i;
         }
 
