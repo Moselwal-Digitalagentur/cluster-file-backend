@@ -1,16 +1,17 @@
-# PHPStan extensions enabled via phpstan/extension-installer:
-#   - phpstan/phpstan-strict-rules         (from moselwal/dev)
-#   - phpstan/phpstan-phpunit              (from moselwal/dev)
-#   - phpstan/phpstan-deprecation-rules    (this package require-dev)
-# phpstan/phpstan-deprecation-rules is pinned here directly because
-# moselwal/dev currently does not require it; we want every consumer of
-# deprecated 3rd-party APIs to be flagged at QA time.
-
+# Level and rule set come from the shared standard in moselwal/dev, so a change
+# there reaches this repository. Only the paths and the deviations below are
+# local — the shared file deliberately omits paths, because a relative path in
+# it would resolve inside vendor/.
+#
+# phpstan/phpstan-deprecation-rules is required by this package rather than by
+# moselwal/dev, which does not carry it; it is registered through
+# phpstan/extension-installer like the rest. We want every consumer of a
+# deprecated 3rd-party API flagged at QA time.
 includes:
+    - vendor/moselwal/dev/config/typo3/phpstan.neon
     - phar://vendor/phpstan/phpstan/phpstan.phar/conf/bleedingEdge.neon
 
 parameters:
-    level: 8
     paths:
         - Classes
         - Tests
