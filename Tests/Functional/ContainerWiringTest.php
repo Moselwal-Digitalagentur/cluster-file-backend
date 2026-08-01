@@ -93,7 +93,11 @@ final class ContainerWiringTest extends FunctionalTestCase
         // kuenftiges unbekanntes Tag den Test nicht zum Einsturz bringt,
         // sondern nur diesen einen Eintrag unlesbar macht.
         $parsed = Yaml::parseFile(
-            \dirname(__DIR__, 2).'/Configuration/Services.yaml',
+            // sprintf statt Verkettung: die Regel concat_space steht in den
+            // Repositories unterschiedlich, je nachdem ob der Hausstandard
+            // schon angewendet ist. Ohne Verkettung greift sie gar nicht, und
+            // dieselbe Datei passt in beiden Faellen.
+            \sprintf('%s/Configuration/Services.yaml', \dirname(__DIR__, 2)),
             Yaml::PARSE_CONSTANT | Yaml::PARSE_CUSTOM_TAGS,
         );
 
