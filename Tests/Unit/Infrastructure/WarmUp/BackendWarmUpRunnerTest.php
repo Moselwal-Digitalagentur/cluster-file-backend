@@ -155,10 +155,22 @@ final class BackendWarmUpRunnerTest extends TestCase
     {
         $runner = $this->runner(new NullBackend());
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('is not configured with ClusterFileBackend');
-
-        $runner->run($this->namespace());
+        // Nicht expectExceptionMessage(): PHPUnit hat es mit 13 als veraltet
+        // markiert (sebastianbergmann/phpunit#6560), und der geteilte
+        // PHPStan-Standard meldet den Aufruf. Das try/catch-Muster ist
+        // ausserdem das, was dieses Repository ohnehin verwendet
+        // (WriteOrderTest, EmptyDirPayloadStoreTest).
+        //
+        // Die Nachricht wird mitgeprueft und nicht nur der Typ: RuntimeException
+        // wirft an dieser Stelle auch alles Unerwartete, und ein Test, der jede
+        // RuntimeException akzeptiert, bestuende auch dann noch, wenn die
+        // Pruefung, um die es geht, ersatzlos entfiele.
+        try {
+            $runner->run($this->namespace());
+            self::fail('a backend other than ClusterFileBackend should have been refused');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('is not configured with ClusterFileBackend', $e->getMessage());
+        }
     }
 
     #[Test]
