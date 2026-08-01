@@ -8,7 +8,7 @@
 # phpstan/extension-installer like the rest. We want every consumer of a
 # deprecated 3rd-party API flagged at QA time.
 includes:
-    - vendor/moselwal/dev/config/typo3/phpstan.neon
+    - vendor/moselwal/dev-typo3/config/typo3/phpstan.neon
     - phar://vendor/phpstan/phpstan/phpstan.phar/conf/bleedingEdge.neon
 
 parameters:
